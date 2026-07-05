@@ -1,0 +1,9 @@
+.order-detail-lines{display:none!important}
+.order-detail-row{padding:13px 2px 14px!important}
+.order-detail-title{font-size:15px!important;font-weight:900!important;color:var(--primary)!important;margin-bottom:6px!important}
+.order-detail-flavors{gap:2px!important;margin:0!important}
+.order-detail-flavor{display:block!important;font-size:13px!important;line-height:1.55!important;color:var(--primary)!important}
+.order-detail-flavor span{font-weight:800!important;color:var(--primary)!important}
+.order-detail-flavor b{font-weight:800!important;color:var(--text-muted)!important;margin-left:3px!important}
+.report-history-item .history-detail-hint{color:var(--primary)!important;font-weight:900!important}
+.history-item-meta{color:var(--text-muted)!important}
