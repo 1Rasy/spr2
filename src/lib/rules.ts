@@ -2,6 +2,8 @@ import type { Product, SalesOrder, SalesOrderItem } from '../types';
 
 const AFTER_SALE_REMARK_PREFIX = 'AFTER_SALES:';
 
+type OrderAfterSaleMeta = Partial<Pick<SalesOrder, 'status' | 'remark'>>;
+
 export function money(value: number | string | null | undefined) {
   return Number(value || 0).toFixed(2);
 }
@@ -41,7 +43,7 @@ export function buildAfterSaleRemark(map: Record<string, number>) {
   return Object.keys(clean).length ? AFTER_SALE_REMARK_PREFIX + JSON.stringify(clean) : null;
 }
 
-export function orderHasAfterSale(order: Pick<SalesOrder, 'status' | 'remark'>, items: SalesOrderItem[] = []) {
+export function orderHasAfterSale(order: OrderAfterSaleMeta = {}, items: SalesOrderItem[] = []) {
   return String(order.status || '').includes('AFTER_SALE') ||
     Object.keys(parseAfterSaleRemark(order.remark)).length > 0 ||
     items.some(isAfterSaleItem);
