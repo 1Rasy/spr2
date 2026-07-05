@@ -242,21 +242,25 @@ function App() {
   return (
     <div className="page">
       <div className="card">
-        <div className="topbar">
-          {screen !== 'employees' && <button className="back" onClick={back}>返回</button>}
-          <div className="crumb">{employee?.name || 'SPR2'}</div>
-        </div>
+        {screen !== 'employees' && (
+          <div className="top-action-bar">
+            <button className="back-btn" onClick={back}>返回</button>
+          </div>
+        )}
         {error && <div className="error">❌ {error}</div>}
         {loading && <div className="loading">{LOADING_TEXT}</div>}
 
         {screen === 'employees' && (
           <section>
-            <input className="search" value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="🔍 输入姓名或工号搜索员工" />
-            <div className="grid two">
+            <div className="search-wrapper">
+              <input value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="🔍 输入姓名或工号搜索员工" />
+              {keyword && <button className="search-clear-btn visible" onClick={() => setKeyword('')}>✕</button>}
+            </div>
+            <div className="emp-grid">
               {filteredEmployees.map(row => (
-                <button className="tile" key={row.employee_code} onClick={() => chooseEmployee(row)}>
+                <button className="emp-card" key={row.employee_code} onClick={() => chooseEmployee(row)}>
                   <strong>{row.name}</strong>
-                  <span>{row.employee_code}</span>
+                  <div className="sub">{row.employee_code}</div>
                 </button>
               ))}
             </div>
@@ -265,16 +269,24 @@ function App() {
 
         {screen === 'stores' && (
           <section>
-            <div className="actions">
-              <button onClick={() => openReport()}>卖进数据</button>
-              <button onClick={openStock}>库存</button>
+            <div className="store-top-gates">
+              <button className="btn-gate-half btn-gate-stock" onClick={openStock}>库存</button>
+              <button className="btn-gate-half btn-gate-report" onClick={() => openReport()}>卖进数据</button>
+              <button className="btn-gate-half btn-gate-newstore" onClick={() => alert('新门店功能后续迁移')}>新门店</button>
             </div>
-            <input className="search" value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="搜门店" />
-            <div className="list">
+            <div className="search-wrapper">
+              <input value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="搜门店" />
+              {keyword && <button className="search-clear-btn visible" onClick={() => setKeyword('')}>✕</button>}
+            </div>
+            <div className="store-container">
               {filteredStores.map(row => (
-                <button className="row" key={row.atom_code} onClick={() => openHistory(row)}>
-                  <strong>{row.store_name}</strong>
-                  <span>{row.atom_code}</span>
+                <button className="item store-item" key={row.atom_code} onClick={() => openHistory(row)}>
+                  <div className="item-main-row">
+                    <div className="prod-info">
+                      <div className="prod-name">{row.store_name}</div>
+                      <div className="sub">{row.atom_code}</div>
+                    </div>
+                  </div>
                 </button>
               ))}
             </div>
@@ -283,16 +295,22 @@ function App() {
 
         {screen === 'history' && store && (
           <section>
-            <h1>{store.store_name}</h1>
-            <div className="actions"><button className="primary" onClick={openOrder}>＋ 新增单据</button></div>
-            <div className="list">
+            <div className="big-store-title">{store.store_name}</div>
+            <button className="btn-new-order" onClick={openOrder}>＋ 新增单据</button>
+            <div>
               {history.map(row => (
-                <button className="order-card" key={row.order_no} onClick={() => openDetail(row.order_no)}>
-                  <div className="between"><strong>实收：{money(row.saleSum)}</strong><span>{row.created_at?.split('T')[0] || '-'}</span></div>
-                  <div className="between muted"><span>品项数：{row.skuCount} 款 {row.hasAfterSale && <b className="badge">有售后</b>}</span><span>生成单据</span></div>
+                <button className="history-item history-item-compact" key={row.order_no} onClick={() => openDetail(row.order_no)}>
+                  <div className="history-item-top">
+                    <span>实收：{money(row.saleSum)}</span>
+                    <span>{row.created_at?.split('T')[0] || '-'}</span>
+                  </div>
+                  <div className="history-item-actions">
+                    <div className="history-item-meta">品项数：{row.skuCount} 款 {row.hasAfterSale && <b className="badge">有售后</b>}</div>
+                    <span className="delivery-note-btn delivery-note-btn-primary">生成单据</span>
+                  </div>
                 </button>
               ))}
-              {!history.length && !loading && <div className="empty">暂无订单</div>}
+              {!history.length && !loading && <div className="sub empty">暂无订单</div>}
             </div>
           </section>
         )}
@@ -301,17 +319,23 @@ function App() {
 
         {screen === 'report' && (
           <section>
-            <h1>卖进数据</h1>
-            <div className="date-filter">
-              <input type="date" value={reportDate} onChange={event => openReport(event.target.value)} />
-              <button onClick={() => openReport(localDate())}>今天</button>
+            <div className="big-store-title">📈 卖进数据</div>
+            <div className="report-filter-row">
+              <input className="report-date-real" type="date" value={reportDate} onChange={event => openReport(event.target.value)} />
+              <button className="smallbtn" onClick={() => openReport(localDate())}>今天</button>
             </div>
-            <div className="amount">总实收：{money(reportRows.reduce((sum, row) => sum + row.saleSum, 0))}</div>
-            <div className="list">
+            <div className="amount-summary-banner"><strong>总实收：{money(reportRows.reduce((sum, row) => sum + row.saleSum, 0))}</strong></div>
+            <div>
               {reportRows.map(row => (
-                <button className="order-card" key={row.order_no} onClick={() => openDetail(row.order_no)}>
-                  <div className="between"><strong>{row.storeName}</strong><span>{row.orderDate}</span></div>
-                  <div className="between muted"><span>品项数：{row.skuCount} 种 {row.hasAfterSale && <b className="badge">有售后</b>}</span><span>实收：{money(row.saleSum)}</span></div>
+                <button className="history-item report-history-item" key={row.order_no} onClick={() => openDetail(row.order_no)}>
+                  <div className="history-item-top">
+                    <span>{row.storeName}</span>
+                    <span>{row.orderDate}</span>
+                  </div>
+                  <div className="history-item-actions">
+                    <div className="history-item-meta">品项数：{row.skuCount} 种 {row.hasAfterSale && <b className="badge">有售后</b>}</div>
+                    <div className="history-detail-hint">实收：{money(row.saleSum)}</div>
+                  </div>
                 </button>
               ))}
             </div>
@@ -320,13 +344,16 @@ function App() {
 
         {screen === 'stock' && (
           <section>
-            <h1>库存</h1>
-            <input className="search" value={productKeyword} onChange={event => setProductKeyword(event.target.value)} placeholder="搜商品 / 条码" />
-            <div className="list">
+            <div className="big-store-title">库存</div>
+            <div className="search-wrapper">
+              <input value={productKeyword} onChange={event => setProductKeyword(event.target.value)} placeholder="搜商品 / 条码" />
+              {productKeyword && <button className="search-clear-btn visible" onClick={() => setProductKeyword('')}>✕</button>}
+            </div>
+            <div>
               {products.filter(p => !productKeyword || productDisplayName(p).includes(productKeyword) || String(p.barcode).includes(productKeyword)).slice(0, 200).map(product => (
                 <div className="stock-row" key={String(product.barcode)}>
-                  <span>{productDisplayName(product)}</span>
-                  <strong>{stockMap.get(String(product.barcode)) || 0}</strong>
+                  <strong>{productDisplayName(product)}</strong>
+                  <div className="stock-qty">库存：{stockMap.get(String(product.barcode)) || 0}</div>
                 </div>
               ))}
             </div>
@@ -335,20 +362,35 @@ function App() {
 
         {screen === 'order' && store && (
           <section>
-            <h1>新增单据</h1>
-            <label className="field">日期<input type="date" value={draftDate} onChange={event => setDraftDate(event.target.value)} /></label>
-            <input className="search" value={productKeyword} onChange={event => setProductKeyword(event.target.value)} placeholder="搜商品 / 条码 / 口味" />
-            <div className="list product-list">
+            <div className="big-store-title">新增单据</div>
+            <div className="order-date-row">
+              <span className="order-date-main">日期：<input className="order-date-input" type="date" value={draftDate} onChange={event => setDraftDate(event.target.value)} /></span>
+            </div>
+            <div className="search-wrapper">
+              <input value={productKeyword} onChange={event => setProductKeyword(event.target.value)} placeholder="搜商品 / 条码 / 口味" />
+              {productKeyword && <button className="search-clear-btn visible" onClick={() => setProductKeyword('')}>✕</button>}
+            </div>
+            <div>
               {filteredProducts.map(product => {
                 const barcode = String(product.barcode || product.id || '');
                 const line = draftLines[barcode] || { barcode, looseQty: 0, loosePrice: Number(product.default_price || 0), afterSaleQty: 0 };
                 return (
-                  <div className="product" key={barcode}>
-                    <div><strong>{orderDetailSpec(product, barcode)}</strong><span>{orderDetailFlavor(product)}</span></div>
-                    <div className="inputs">
-                      <label>散<input type="number" inputMode="numeric" min="0" value={line.looseQty || ''} onChange={event => updateDraft(product, { looseQty: Number(event.target.value || 0) })} /></label>
-                      <label>价<input type="number" inputMode="decimal" min="0" step="0.05" value={line.loosePrice || ''} onChange={event => updateDraft(product, { loosePrice: Number(event.target.value || 0) })} /></label>
-                      <label>收回<input type="number" inputMode="numeric" min="0" value={line.afterSaleQty || ''} onChange={event => updateDraft(product, { afterSaleQty: Number(event.target.value || 0) })} /></label>
+                  <div className="item" key={barcode}>
+                    <div className="item-main-row">
+                      <div className="prod-info">
+                        <div className="prod-name">{orderDetailSpec(product, barcode)}</div>
+                        {orderDetailFlavor(product) && <div className="flavor-badge">{orderDetailFlavor(product)}</div>}
+                      </div>
+                    </div>
+                    <div className="control-group">
+                      <div className="sell-line sell-line-react">
+                        <span className="sell-tag">散</span>
+                        <input className="ios-picker" type="number" inputMode="numeric" min="0" value={line.looseQty || ''} onChange={event => updateDraft(product, { looseQty: Number(event.target.value || 0) })} />
+                        <span className="price-label">价格</span>
+                        <input className="ios-picker price-picker" type="number" inputMode="decimal" min="0" step="0.05" value={line.loosePrice || ''} onChange={event => updateDraft(product, { loosePrice: Number(event.target.value || 0) })} />
+                        <span className="after-sales-wrap"><span className="after-sales-toggle">收回</span></span>
+                        <input className="ios-picker" type="number" inputMode="numeric" min="0" value={line.afterSaleQty || ''} onChange={event => updateDraft(product, { afterSaleQty: Number(event.target.value || 0) })} />
+                      </div>
                     </div>
                   </div>
                 );
@@ -381,15 +423,25 @@ function OrderDetail({ detail, products }: { detail: DetailState; products: Prod
   const total = normalAmount(detail.items);
   return (
     <section>
-      <h1>订单详情</h1>
-      <div className="amount">实收：{money(total)} {detail.hasAfterSale && <b className="badge">有售后</b>}</div>
-      <div className="actions compact"><button>修改</button><button className="danger">删除</button><button className="black">生成单据</button></div>
-      <div className="list">
+      <div className="big-store-title">订单详情</div>
+      <div className="detail-action-row">
+        <div className="detail-summary-actions">
+          <div className="amount-summary-banner detail-amount-banner"><strong>实收：{money(total)}</strong> {detail.hasAfterSale && <b className="badge">有售后</b>}</div>
+          <button className="delivery-note-btn delivery-note-btn-primary detail-delivery-action">生成单据</button>
+        </div>
+        <div className="detail-secondary-actions">
+          <button className="smallbtn detail-action-secondary">修改</button>
+          <button className="smallbtn detail-danger-action">删除</button>
+        </div>
+      </div>
+      <div className="order-detail-list">
         {Array.from(grouped.values()).map(row => (
-          <div className="detail-row" key={row.title}>
-            <strong>{row.title}</strong>
-            {Array.from(row.flavors.entries()).map(([flavor, qty]) => <span className="flavor" key={flavor}>{flavor} x{qty}</span>)}
-            <small>卖进：{row.parts.join(' + ')}</small>
+          <div className="order-detail-row" key={row.title}>
+            <div className="order-detail-title">{row.title}</div>
+            <div className="order-detail-flavors order-detail-flavors-compact">
+              {Array.from(row.flavors.entries()).map(([flavor, qty]) => <div className="order-detail-flavor order-detail-flavor-compact" key={flavor}><span>{flavor}<b>x{qty}</b></span></div>)}
+            </div>
+            <div className="order-detail-lines"><div className="order-detail-line">卖进：<strong>{row.parts.join(' + ')}</strong></div></div>
           </div>
         ))}
       </div>
