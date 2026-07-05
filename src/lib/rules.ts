@@ -2,11 +2,13 @@ import type { Product, SalesOrder, SalesOrderItem } from '../types';
 
 const AFTER_SALE_REMARK_PREFIX = 'AFTER_SALES:';
 
+type OrderAfterSaleMeta = Partial<Pick<SalesOrder, 'status' | 'remark'>> & Record<string, unknown>;
+
 export function money(value: number | string | null | undefined) {
   return Number(value || 0).toFixed(2);
 }
 
-export function localDate(input = new Date()) {
+export function localDate(input: Date | string = new Date()) {
   const d = input instanceof Date ? input : new Date(input);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -41,9 +43,9 @@ export function buildAfterSaleRemark(map: Record<string, number>) {
   return Object.keys(clean).length ? AFTER_SALE_REMARK_PREFIX + JSON.stringify(clean) : null;
 }
 
-export function orderHasAfterSale(order: Pick<SalesOrder, 'status' | 'remark'>, items: SalesOrderItem[] = []) {
+export function orderHasAfterSale(order: OrderAfterSaleMeta = {}, items: SalesOrderItem[] = []) {
   return String(order.status || '').includes('AFTER_SALE') ||
-    Object.keys(parseAfterSaleRemark(order.remark)).length > 0 ||
+    Object.keys(parseAfterSaleRemark(order.remark as string | null | undefined)).length > 0 ||
     items.some(isAfterSaleItem);
 }
 
