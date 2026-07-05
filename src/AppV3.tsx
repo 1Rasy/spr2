@@ -131,7 +131,7 @@ export default function AppV3() {
         {loading && <div className="loading">{LOADING_TEXT}</div>}
 
         {screen === 'employees' && <EmployeeScreen keyword={keyword} setKeyword={setKeyword} employees={filteredEmployees} chooseEmployee={chooseEmployee} />}
-        {screen === 'stores' && <StoreScreen keyword={keyword} setKeyword={setKeyword} stores={filteredStores} openHistory={openHistory} openStock={openStock} openReport={openReport} />}
+        {screen === 'stores' && <StoreScreen keyword={keyword} setKeyword={setKeyword} stores={filteredStores} openHistory={openHistory} openStock={openStock} openReport={() => openReport()} />}
         {screen === 'history' && store && <HistoryScreen store={store} history={history} openOrder={openOrder} openDetail={openDetail} loading={loading} />}
         {screen === 'detail' && detail && <DetailScreen detail={detail} products={products} />}
         {screen === 'report' && <ReportScreen date={reportDate} setDate={openReport} rows={reportRows} openDetail={openDetail} />}
@@ -147,7 +147,7 @@ function EmployeeScreen({ keyword, setKeyword, employees, chooseEmployee }: { ke
 }
 
 function StoreScreen({ keyword, setKeyword, stores, openHistory, openStock, openReport }: { keyword: string; setKeyword: (v: string) => void; stores: StoreAsset[]; openHistory: (row: StoreAsset) => void; openStock: () => void; openReport: () => void }) {
-  return <><div className="store-top-gates"><button className="btn-gate-half btn-gate-stock" onClick={openStock}>库存</button><button className="btn-gate-half btn-gate-report" onClick={openReport}>卖进数据</button><button className="btn-gate-half btn-gate-newstore" onClick={() => alert('新门店功能后续迁移')}>新门店</button></div><SearchBox value={keyword} onChange={setKeyword} onClear={() => setKeyword('')} placeholder="搜门店" /><div className="store-container">{stores.map(row => <button className="item store-item" key={row.atom_code} onClick={() => openHistory(row)}><div className="prod-name">{row.store_name}</div><div className="sub">{row.atom_code}</div></button>)}</div></>;
+  return <><div className="store-top-gates"><button className="btn-gate-half btn-gate-stock" onClick={openStock}>库存</button><button className="btn-gate-half btn-gate-report" onClick={() => openReport()}>卖进数据</button><button className="btn-gate-half btn-gate-newstore" onClick={() => alert('新门店功能后续迁移')}>新门店</button></div><SearchBox value={keyword} onChange={setKeyword} onClear={() => setKeyword('')} placeholder="搜门店" /><div className="store-container">{stores.map(row => <button className="item store-item" key={row.atom_code} onClick={() => openHistory(row)}><div className="prod-name">{row.store_name}</div><div className="sub">{row.atom_code}</div></button>)}</div></>;
 }
 
 function HistoryScreen({ store, history, openOrder, openDetail, loading }: { store: StoreAsset; history: HistorySummary[]; openOrder: () => void; openDetail: (orderNo: string) => void; loading: boolean }) {
