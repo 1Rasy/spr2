@@ -1,13 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { loadEmployees, loadHistory, loadItems, loadOrderDetail, loadOrdersByEmployee, loadProducts, loadStocks, loadStores, submitOrder } from './lib/api';
+import { calculateOrderTotal, canMixBox, defaultOrderLine, packSize, productBarcode, unitOf } from './lib/orderPayload';
 import { localDate, money, normalAmount, normalSaleItems, orderDetailFlavor, orderDetailSpec, orderHasAfterSale, productDisplayName, uniqueSkuCount } from './lib/rules';
 import { PageTitle, SearchBox } from './ui/components';
 import type { Employee, HistorySummary, OrderLineDraft, Product, ReportRow, SalesOrderItem, Screen, StoreAsset, VanStock } from './types';
 
 const LOADING_TEXT = '正在加载..';
+const ORDER_DRAFT_PREFIX = 'spr2_order_draft_v1';
 
 type DetailState = { orderNo: string; items: SalesOrderItem[]; hasAfterSale: boolean };
 type DetailGroup = { title: string; flavors: Map<string, number> };
+
+type StoredDraft = {
+  date: string;
+  lines: Record<string, OrderLineDraft>;
+};
 
 export default function AppV3() {
   const [screen, setScreen] = useState<Screen>('employees');
@@ -30,8 +37,14 @@ export default function AppV3() {
 
   useEffect(() => { void bootstrap(); }, []);
 
+  useEffect(() => {
+    if (screen !== 'order' || !employee || !store) return;
+    saveDraft(draftKey(employee, store), { date: draftDate, lines: draftLines });
+  }, [screen, employee, store, draftDate, draftLines]);
+
   async function run<T>(job: () => Promise<T>) {
-    setLoading(true); setError('');
+    setLoading(true);
+    setError('');
     try { return await job(); }
     catch (err) { setError(err instanceof Error ? err.message : String(err)); throw err; }
     finally { setLoading(false); }
@@ -40,17 +53,24 @@ export default function AppV3() {
   async function bootstrap() {
     await run(async () => {
       const [empRows, productRows] = await Promise.all([loadEmployees(), loadProducts()]);
-      setEmployees(empRows); setProducts(productRows);
+      setEmployees(empRows);
+      setProducts(productRows);
     });
   }
 
   async function chooseEmployee(row: Employee) {
-    await run(async () => { setEmployee(row); setKeyword(''); setStores(await loadStores(row.employee_code)); setScreen('stores'); });
+    await run(async () => {
+      setEmployee(row);
+      setKeyword('');
+      setStores(await loadStores(row.employee_code));
+      setScreen('stores');
+    });
   }
 
   async function openHistory(row: StoreAsset) {
     await run(async () => {
-      setStore(row); setKeyword('');
+      setStore(row);
+      setKeyword('');
       const orders = await loadHistory(row.atom_code);
       const items = await loadItems(orders.map(o => o.order_no));
       const grouped = groupItemsByOrder(items);
@@ -85,23 +105,44 @@ export default function AppV3() {
     });
   }
 
-  async function openStock() { if (!employee) return; await run(async () => { setStocks(await loadStocks(employee.employee_code)); setScreen('stock'); }); }
-  function openOrder() { setDraftLines({}); setDraftDate(localDate()); setProductKeyword(''); setScreen('order'); }
+  async function openStock() {
+    if (!employee) return;
+    await run(async () => {
+      setStocks(await loadStocks(employee.employee_code));
+      setScreen('stock');
+    });
+  }
+
+  function openOrder() {
+    if (!employee || !store) return;
+    const saved = loadDraft(draftKey(employee, store));
+    setDraftLines(saved?.lines || {});
+    setDraftDate(saved?.date || localDate());
+    setProductKeyword('');
+    setScreen('order');
+  }
+
   function back() {
     setError('');
     if (screen === 'stores') { setEmployee(null); setScreen('employees'); return; }
     if (screen === 'history') { setStore(null); setScreen('stores'); return; }
-    if (screen === 'detail' || screen === 'order') { setScreen('history'); return; }
+    if (screen === 'detail') { setScreen('history'); return; }
+    if (screen === 'order') {
+      if (employee && store) clearDraft(draftKey(employee, store));
+      setDraftLines({});
+      setScreen('history');
+      return;
+    }
     setScreen('stores');
   }
 
   function updateDraft(product: Product, patch: Partial<OrderLineDraft>) {
-    const barcode = String(product.barcode || product.id || '');
+    const barcode = productBarcode(product);
     setDraftLines(prev => {
-      const old = prev[barcode] || { barcode, looseQty: 0, loosePrice: Number(product.default_price || 0), afterSaleQty: 0 };
-      const next = { ...old, ...patch };
+      const nextLine = { ...defaultOrderLine(product), ...(prev[barcode] || {}), ...patch, barcode };
       const copy = { ...prev };
-      if (next.looseQty > 0 || next.afterSaleQty > 0) copy[barcode] = next; else delete copy[barcode];
+      if (hasLineValue(nextLine)) copy[barcode] = nextLine;
+      else delete copy[barcode];
       return copy;
     });
   }
@@ -110,6 +151,8 @@ export default function AppV3() {
     if (!employee || !store) return;
     await run(async () => {
       const orderNo = await submitOrder({ employeeCode: employee.employee_code, atomCode: store.atom_code, storeName: store.store_name, date: draftDate, products, lines: draftLines });
+      clearDraft(draftKey(employee, store));
+      setDraftLines({});
       alert(`✅ 开单成功：${orderNo}`);
       await openHistory(store);
     });
@@ -119,7 +162,9 @@ export default function AppV3() {
   const filteredStores = useMemo(() => filterRows(stores, keyword, row => `${row.atom_code} ${row.store_name}`), [stores, keyword]);
   const filteredProducts = useMemo(() => {
     const selected = new Set(Object.keys(draftLines));
-    return filterRows(products, productKeyword, row => `${row.barcode} ${row.brand} ${row.spec} ${row.flavor} ${row.name}`).filter(row => selected.has(String(row.barcode)) || productKeyword || true).slice(0, productKeyword ? 120 : 60);
+    return filterRows(products, productKeyword, row => `${row.barcode} ${row.brand} ${row.spec} ${row.flavor} ${row.name} ${row.product_name}`)
+      .filter(row => selected.has(productBarcode(row)) || productKeyword || true)
+      .slice(0, productKeyword ? 120 : 60);
   }, [products, productKeyword, draftLines]);
   const stockMap = useMemo(() => new Map(stocks.map(row => [String(row.product_barcode), Number(row.qty ?? row.stock_qty ?? 0)])), [stocks]);
 
@@ -136,7 +181,7 @@ export default function AppV3() {
         {screen === 'detail' && detail && <DetailScreen detail={detail} products={products} />}
         {screen === 'report' && <ReportScreen date={reportDate} setDate={openReport} rows={reportRows} openDetail={openDetail} />}
         {screen === 'stock' && <StockScreen keyword={productKeyword} setKeyword={setProductKeyword} products={products} stockMap={stockMap} />}
-        {screen === 'order' && store && <OrderScreen date={draftDate} setDate={setDraftDate} keyword={productKeyword} setKeyword={setProductKeyword} products={filteredProducts} lines={draftLines} updateDraft={updateDraft} saveOrder={saveOrder} />}
+        {screen === 'order' && store && <OrderScreen date={draftDate} setDate={setDraftDate} keyword={productKeyword} setKeyword={setProductKeyword} allProducts={products} products={filteredProducts} lines={draftLines} updateDraft={updateDraft} saveOrder={saveOrder} />}
       </section>
     </main>
   );
@@ -166,19 +211,25 @@ function ReportScreen({ date, setDate, rows, openDetail }: { date: string; setDa
 
 function StockScreen({ keyword, setKeyword, products, stockMap }: { keyword: string; setKeyword: (v: string) => void; products: Product[]; stockMap: Map<string, number> }) {
   const rows = filterRows(products, keyword, p => `${productDisplayName(p)} ${p.barcode}`).slice(0, 200);
-  return <><PageTitle>库存</PageTitle><SearchBox value={keyword} onChange={setKeyword} onClear={() => setKeyword('')} placeholder="搜商品 / 条码" />{rows.map(product => <div className="stock-row" key={String(product.barcode)}><strong>{productDisplayName(product)}</strong><div className="stock-qty">库存：{stockMap.get(String(product.barcode)) || 0}</div></div>)}</>;
+  return <><PageTitle>库存</PageTitle><SearchBox value={keyword} onChange={setKeyword} onClear={() => setKeyword('')} placeholder="搜商品 / 条码" />{rows.map(product => <div className="stock-row" key={productBarcode(product)}><strong>{productDisplayName(product)}</strong><div className="stock-qty">库存：{stockMap.get(productBarcode(product)) || 0}</div></div>)}</>;
 }
 
-function OrderScreen({ date, setDate, keyword, setKeyword, products, lines, updateDraft, saveOrder }: { date: string; setDate: (v: string) => void; keyword: string; setKeyword: (v: string) => void; products: Product[]; lines: Record<string, OrderLineDraft>; updateDraft: (product: Product, patch: Partial<OrderLineDraft>) => void; saveOrder: () => void }) {
-  const total = Object.values(lines).reduce((sum, line) => sum + Number(line.looseQty || 0) * Number(line.loosePrice || 0), 0);
-  return <><PageTitle>新增单据</PageTitle><div className="order-date-row"><span className="order-date-main">日期：<input className="order-date-input" type="date" value={date} onChange={event => setDate(event.target.value)} /></span></div><SearchBox value={keyword} onChange={setKeyword} onClear={() => setKeyword('')} placeholder="搜商品 / 条码 / 口味" />{products.map(product => <ProductLine key={String(product.barcode || product.id)} product={product} line={lines[String(product.barcode || product.id)]} updateDraft={updateDraft} />)}<button className="float-submit" onClick={saveOrder}>提交账单 · {money(total)}</button></>;
+function OrderScreen({ date, setDate, keyword, setKeyword, allProducts, products, lines, updateDraft, saveOrder }: { date: string; setDate: (v: string) => void; keyword: string; setKeyword: (v: string) => void; allProducts: Product[]; products: Product[]; lines: Record<string, OrderLineDraft>; updateDraft: (product: Product, patch: Partial<OrderLineDraft>) => void; saveOrder: () => void }) {
+  const total = calculateOrderTotal(allProducts, lines);
+  return <><PageTitle>新增单据</PageTitle><div className="order-date-row"><span className="order-date-main">日期：<input className="order-date-input" type="date" value={date} onChange={event => setDate(event.target.value)} /></span></div><SearchBox value={keyword} onChange={setKeyword} onClear={() => setKeyword('')} placeholder="搜商品 / 条码 / 口味" />{products.map(product => <ProductLine key={productBarcode(product)} product={product} line={lines[productBarcode(product)]} updateDraft={updateDraft} />)}<button className="float-submit" onClick={saveOrder}>提交账单 · {money(total)}</button></>;
 }
 
 function ProductLine({ product, line, updateDraft }: { product: Product; line?: OrderLineDraft; updateDraft: (product: Product, patch: Partial<OrderLineDraft>) => void }) {
-  const current = line || { barcode: String(product.barcode || product.id || ''), looseQty: 0, loosePrice: Number(product.default_price || 0), afterSaleQty: 0 };
-  return <div className="item product-line"><div className="prod-name">{orderDetailSpec(product, current.barcode)}</div>{orderDetailFlavor(product) && <div className="flavor-badge">{orderDetailFlavor(product)}</div>}<div className="control-group"><div className="sell-line"><span className="sell-tag">散</span><input className="ios-picker" type="number" inputMode="numeric" min="0" value={current.looseQty || ''} onChange={event => updateDraft(product, { looseQty: Number(event.target.value || 0) })} /><span className="price-label">价格</span><input className="ios-picker price-picker" type="number" inputMode="decimal" min="0" step="0.05" value={current.loosePrice || ''} onChange={event => updateDraft(product, { loosePrice: Number(event.target.value || 0) })} /><span className="after-sales-toggle">收回</span><input className="ios-picker" type="number" inputMode="numeric" min="0" value={current.afterSaleQty || ''} onChange={event => updateDraft(product, { afterSaleQty: Number(event.target.value || 0) })} /></div></div></div>;
+  const current = { ...defaultOrderLine(product), ...(line || {}) };
+  const size = packSize(product);
+  return <div className="item product-line"><div className="prod-name">{orderDetailSpec(product, current.barcode)}</div>{orderDetailFlavor(product) && <div className="flavor-badge">{orderDetailFlavor(product)}</div>}<div className="control-group">{size > 1 && <div className="sell-line"><span className="sell-tag">整</span><input className="ios-picker" type="number" inputMode="numeric" min="0" value={current.wholeQty || ''} onChange={event => updateDraft(product, { wholeQty: Number(event.target.value || 0) })} /><span className="price-label">整价</span><input className="ios-picker price-picker" type="number" inputMode="decimal" min="0" step="0.10" value={current.wholePrice || ''} onChange={event => updateDraft(product, { wholePrice: Number(event.target.value || 0) })} /><span className="unit-hint">{size}{unitOf(product)}</span></div>}<div className="sell-line"><span className="sell-tag">散</span><input className="ios-picker" type="number" inputMode="numeric" min="0" value={current.looseQty || ''} onChange={event => updateDraft(product, { looseQty: Number(event.target.value || 0) })} /><span className="price-label">散价</span><input className="ios-picker price-picker" type="number" inputMode="decimal" min="0" step="0.05" value={current.loosePrice || ''} onChange={event => updateDraft(product, { loosePrice: Number(event.target.value || 0) })} /><span className="after-sales-toggle">收回</span><input className="ios-picker" type="number" inputMode="numeric" min="0" value={current.afterSaleQty || ''} onChange={event => updateDraft(product, { afterSaleQty: Number(event.target.value || 0) })} /></div>{canMixBox(product) && <div className="sell-line mix-line"><span className="sell-tag">拼盒</span><input className="ios-picker" type="number" inputMode="numeric" min="0" value={current.mixQty || ''} onChange={event => updateDraft(product, { mixQty: Number(event.target.value || 0) })} /><span className="price-label">盒价</span><input className="ios-picker price-picker" type="number" inputMode="decimal" min="0" step="0.10" value={current.mixBoxPrice || ''} onChange={event => updateDraft(product, { mixBoxPrice: Number(event.target.value || 0) })} /><span className="unit-hint">{Number(product.pcs_per_box || 0)}{unitOf(product)}</span></div>}</div></div>;
 }
 
 function filterRows<T>(rows: T[], keyword: string, text: (row: T) => string) { const q = keyword.trim().toLowerCase(); return q ? rows.filter(row => text(row).toLowerCase().includes(q)) : rows; }
 function groupItemsByOrder(items: SalesOrderItem[]) { const grouped = new Map<string, SalesOrderItem[]>(); items.forEach(item => { const key = String(item.order_no); grouped.set(key, [...(grouped.get(key) || []), item]); }); return grouped; }
 function groupOrderDetail(items: SalesOrderItem[], products: Product[]) { const grouped = new Map<string, DetailGroup>(); normalSaleItems(items).forEach(item => { const product = products.find(p => String(p.barcode) === String(item.barcode) || String(p.id) === String(item.barcode)); const title = orderDetailSpec(product, item.product_name || item.barcode); const flavor = orderDetailFlavor(product) || item.product_name || '默认'; const row = grouped.get(title) || { title, flavors: new Map<string, number>() }; const qty = Number(item.sale_qty ?? item.qty ?? 0); row.flavors.set(flavor, Number(row.flavors.get(flavor) || 0) + qty); grouped.set(title, row); }); return Array.from(grouped.values()); }
+function hasLineValue(line: OrderLineDraft) { return Number(line.wholeQty || 0) > 0 || Number(line.looseQty || 0) > 0 || Number(line.mixQty || 0) > 0 || Number(line.afterSaleQty || 0) > 0; }
+function draftKey(employee: Employee, store: StoreAsset) { return `${ORDER_DRAFT_PREFIX}:${employee.employee_code}:${store.atom_code}`; }
+function loadDraft(key: string): StoredDraft | null { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as StoredDraft : null; } catch { return null; } }
+function saveDraft(key: string, draft: StoredDraft) { try { if (Object.keys(draft.lines).length) localStorage.setItem(key, JSON.stringify(draft)); } catch { /* localStorage may be unavailable */ } }
+function clearDraft(key: string) { try { localStorage.removeItem(key); } catch { /* localStorage may be unavailable */ } }

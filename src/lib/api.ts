@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { buildAfterSaleRemark, createdAtFromDate, localDate } from './rules';
+import { buildOrderPayload } from './orderPayload';
 import type { Employee, OrderLineDraft, Product, SalesOrder, SalesOrderItem, StoreAsset, VanStock } from '../types';
 
 export async function fetchAll<T>(table: string, columns = '*', pageSize = 1000) {
@@ -86,57 +87,30 @@ export async function submitOrder(params: {
   const orderNo = 'SO' + Date.now() + Math.floor(Math.random() * 1000);
   const liveStocks = await loadStocks(params.employeeCode);
   const liveMap = new Map(liveStocks.map(row => [String(row.product_barcode), Number(row.qty ?? row.stock_qty ?? 0)]));
-  const items: SalesOrderItem[] = [];
-  const stockUpdates: { product_barcode: string; qty: number }[] = [];
-  const afterSaleMap: Record<string, number> = {};
-  let total = 0;
-
-  for (const line of Object.values(params.lines)) {
-    const product = params.products.find(p => String(p.barcode) === String(line.barcode) || String(p.id) === String(line.barcode));
-    const barcode = String(product?.barcode || line.barcode);
-    const qty = Number(line.looseQty || 0);
-    const afterSaleQty = Number(line.afterSaleQty || 0);
-    const price = Number(line.loosePrice || product?.default_price || 0);
-    const amount = Number((qty * price).toFixed(2));
-    if (qty > 0) {
-      total += amount;
-      items.push({
-        order_no: orderNo,
-        barcode,
-        product_name: product?.name || product?.product_name || product?.spec || barcode,
-        qty,
-        unit_price: price,
-        amount,
-        sale_unit: '散',
-        sale_qty: qty,
-        sale_unit_price: price,
-      });
-    }
-    if (afterSaleQty > 0) afterSaleMap[barcode] = afterSaleQty;
-    const stockDelta = qty - afterSaleQty;
-    if (stockDelta !== 0) stockUpdates.push({ product_barcode: barcode, qty: Number(liveMap.get(barcode) || 0) - stockDelta });
-  }
-
-  if (!items.length && !Object.keys(afterSaleMap).length) throw new Error('空白单据无法提交');
-
+  const payload = buildOrderPayload({
+    orderNo,
+    products: params.products,
+    lines: params.lines,
+    liveStock: liveMap,
+  });
   const { error } = await supabase.rpc('submit_sales_order_v2', {
     p_order_no: orderNo,
     p_employee_code: String(params.employeeCode),
     p_atom_code: String(params.atomCode),
     p_store_name: String(params.storeName),
-    p_total_amount: Number(total.toFixed(2)),
-    p_items: items,
-    p_stock_updates: stockUpdates,
+    p_total_amount: payload.total,
+    p_items: payload.items,
+    p_stock_updates: payload.stockUpdates,
   });
   if (error) throw error;
 
-  const hasAfterSale = Object.keys(afterSaleMap).length > 0;
+  const hasAfterSale = Object.keys(payload.afterSaleMap).length > 0;
   const { error: updateError } = await supabase
     .from('sales_orders')
     .update({
       created_at: createdAtFromDate(params.date || localDate()),
       status: hasAfterSale ? 'SUCCESS_AFTER_SALE' : 'SUCCESS',
-      remark: buildAfterSaleRemark(afterSaleMap),
+      remark: buildAfterSaleRemark(payload.afterSaleMap),
     })
     .eq('order_no', orderNo);
   if (updateError) throw updateError;

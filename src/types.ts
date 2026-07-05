@@ -26,6 +26,7 @@ export interface Product {
   pcs_per_case?: number;
   pcs_per_box?: number;
   unit?: string;
+  allow_mix_box?: boolean;
   is_active?: boolean;
 }
 
@@ -64,8 +65,12 @@ export interface VanStock {
 
 export interface OrderLineDraft {
   barcode: string;
+  wholeQty: number;
+  wholePrice: number;
   looseQty: number;
   loosePrice: number;
+  mixQty: number;
+  mixBoxPrice: number;
   afterSaleQty: number;
 }
 

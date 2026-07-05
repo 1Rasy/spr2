@@ -4,3 +4,6 @@ dist
 .env
 .env.local
 .vscode
+tsconfig*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
