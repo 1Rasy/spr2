@@ -1,9 +1,13 @@
 .order-detail-lines{display:none!important}
-.order-detail-row{padding:13px 2px 14px!important}
-.order-detail-title{font-size:15px!important;font-weight:900!important;color:var(--primary)!important;margin-bottom:6px!important}
-.order-detail-flavors{gap:2px!important;margin:0!important}
-.order-detail-flavor{display:block!important;font-size:13px!important;line-height:1.55!important;color:var(--primary)!important}
+.order-detail-row{padding:14px!important;border:1px solid #eee8f0!important;border-radius:14px!important;background:#fff!important;box-shadow:0 4px 14px rgba(31,17,33,.04)!important}
+.order-detail-title{font-size:16px!important;font-weight:900!important;color:#1f1121!important;margin-bottom:8px!important}
+.order-detail-flavors{display:flex!important;flex-wrap:wrap!important;gap:7px!important;margin:0!important}
+.order-detail-flavor{display:inline-flex!important;align-items:center!important;padding:6px 10px!important;border-radius:999px!important;background:#f5eef7!important;border:1px solid #eadfec!important;color:var(--primary)!important;font-size:13px!important;line-height:1!important}
 .order-detail-flavor span{font-weight:800!important;color:var(--primary)!important}
-.order-detail-flavor b{font-weight:800!important;color:var(--text-muted)!important;margin-left:3px!important}
-.report-history-item .history-detail-hint{color:var(--primary)!important;font-weight:900!important}
-.history-item-meta{color:var(--text-muted)!important}
+.order-detail-flavor b{font-weight:900!important;color:#5f4a61!important;margin-left:4px!important}
+.card{box-shadow:0 10px 28px rgba(31,17,33,.06)!important;border:1px solid rgba(74,21,75,.06)!important}
+.history-item,.item,.emp-card,.stock-row{border-radius:14px!important;background:#fff!important;box-shadow:0 4px 14px rgba(31,17,33,.04)!important;border-color:#eee8f0!important}
+.search-wrapper input{height:44px!important;border-radius:12px!important;background:#fbfafc!important}
+.btn-new-order,.float-submit{box-shadow:0 10px 22px rgba(74,21,75,.20)!important}
+.delivery-note-btn-primary{border-radius:999px!important;background:#111827!important;border-color:#111827!important}
+.amount-summary-banner{border-radius:13px!important;background:#fff!important;box-shadow:0 3px 12px rgba(31,17,33,.035)!important}
