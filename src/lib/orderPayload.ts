@@ -70,7 +70,7 @@ export function calculateOrderTotal(products: Product[], lines: Record<string, O
     const line = lines[productBarcode(product)];
     return line ? sum + lineNormalAmount(product, normalizeOrderLine(product, line)) : sum;
   }, 0);
-  const mix = buildMixBoxPayloads('', products, lines).total;
+  const mix = buildMixBoxPayloads('', products, lines, { validateFullBox: false }).total;
   return Number((normal + mix).toFixed(2));
 }
 
@@ -104,8 +104,9 @@ function activeMixGroups(products: Product[], lines: Record<string, OrderLineDra
   return Array.from(groups.values()).filter(group => group.some(product => number(lines[productBarcode(product)]?.mixQty) > 0));
 }
 
-export function buildMixBoxPayloads(orderNo: string, products: Product[], lines: Record<string, OrderLineDraft>) {
+export function buildMixBoxPayloads(orderNo: string, products: Product[], lines: Record<string, OrderLineDraft>, options: { validateFullBox?: boolean } = {}) {
   const items: SalesOrderItem[] = [];
+  const validateFullBox = options.validateFullBox !== false;
   let total = 0;
 
   for (const group of activeMixGroups(products, lines)) {
@@ -113,11 +114,11 @@ export function buildMixBoxPayloads(orderNo: string, products: Product[], lines:
     const qty = group.reduce((sum, product) => sum + number(lines[productBarcode(product)]?.mixQty), 0);
     const firstSelected = group.find(product => number(lines[productBarcode(product)]?.mixQty) > 0) || group[0];
     const price = number(lines[productBarcode(firstSelected)]?.mixBoxPrice || wholeDefaultPrice(firstSelected));
-    if (qty > 0 && size > 0 && qty % size !== 0) {
+    if (qty > 0 && size > 0 && qty % size !== 0 && validateFullBox) {
       const first = group[0];
       throw new Error(`${first.brand || ''}${first.spec || ''} 拼盒已选 ${qty}${unitOf(first)}，必须按 ${size}${unitOf(first)}成盒提交`);
     }
-    if (!qty) continue;
+    if (!qty || !size) continue;
 
     const amount = Number(((qty / size) * price).toFixed(2));
     let allocated = 0;

@@ -22,6 +22,7 @@ async function importTs(path) {
 
 const {
   buildOrderPayload,
+  calculateOrderTotal,
   defaultOrderLine,
   packSize,
   wholeDefaultPrice,
@@ -98,6 +99,9 @@ const payload = buildOrderPayload({
   },
 });
 
+assert.equal(calculateOrderTotal(products, {
+  A: { ...defaultOrderLine(products[0]), mixQty: 2, mixBoxPrice: 18 },
+}), 6);
 assert.equal(payload.total, 35);
 assert.deepEqual(payload.afterSaleMap, { A: 1 });
 assert.deepEqual(payload.stockUpdates, [
