@@ -43,3 +43,13 @@ assert.match(app, /收回数/, 'after-sales panel should use the old label text'
 assert.match(app, /只算能卖的，收回增加库存/, 'after-sales panel should explain the stock effect like old SPR');
 assert.match(css, /\.control-group\.after-sales-group \.sell-line/, 'after-sales CSS should align loose and whole rows as old SPR');
 assert.match(css, /\.after-sales-panel\.open/, 'after-sales CSS should expose the old open panel layout');
+assert.match(app, /qty-popup-mask/, 'quantity popup should render the old popup mask');
+assert.match(app, /qty-popup-sheet/, 'quantity popup should render the old popup sheet');
+assert.match(app, /qty-popup-grid qty-popup-grid-5/, 'quantity popup should use the old 5-column grid');
+assert.match(app, /data-qty-value/, 'quantity popup should expose old number button hook');
+assert.match(app, /data-qty-action="clear"/, 'quantity popup should expose old clear action hook');
+assert.match(app, /qty-popup-trigger/, 'quantity selects should render popup trigger buttons');
+assert.match(app, /qty-native-hidden/, 'native quantity selects should be visually hidden like old SPR');
+assert.match(app, /售后数/, 'quantity popup should label after-sales quantity separately');
+assert.match(css, /\.qty-popup-mask/, 'quantity popup CSS should include old mask styling');
+assert.match(css, /\.qty-popup-number\.active/, 'quantity popup CSS should include old active number state');
