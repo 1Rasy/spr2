@@ -33,3 +33,13 @@ assert.match(app, /countStoreOrders/, 'manual store delete should check existing
 assert.match(app, /deleteManualStore/, 'manual store delete should remove employee_store_assets rows');
 assert.equal(app.includes("alert('新门店功能后续迁移')"), false, 'new-store gate must not stay as a placeholder alert');
 assert.match(app, /已开单的新门店列表/, 'new-store management should show the old manual-store list label');
+assert.match(app, /after-sales-wrap/, 'order loose row should expose old after-sales inline wrapper');
+assert.match(app, /data-after-sales-wrap/, 'after-sales toggle should keep the old stable wrapper hook');
+assert.match(app, /data-after-sales-panel/, 'after-sales panel should keep the old stable panel hook');
+assert.match(app, /data-after-sales-select/, 'after-sales quantity picker should keep the old stable select hook');
+assert.match(app, /after-sales-toggle/, 'order page should render the old after-sales toggle button');
+assert.match(app, /after-sales-panel-label/, 'after-sales panel should render the old panel label');
+assert.match(app, /收回数/, 'after-sales panel should use the old label text');
+assert.match(app, /只算能卖的，收回增加库存/, 'after-sales panel should explain the stock effect like old SPR');
+assert.match(css, /\.control-group\.after-sales-group \.sell-line/, 'after-sales CSS should align loose and whole rows as old SPR');
+assert.match(css, /\.after-sales-panel\.open/, 'after-sales CSS should expose the old open panel layout');
