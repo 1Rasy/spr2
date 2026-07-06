@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { countStoreOrders, createManualStore, deleteManualStore, loadEmployees, loadHistory, loadItems, loadOrderDetail, loadOrdersByEmployee, loadProducts, loadStocks, loadStores, submitOrder } from './lib/api';
+import { buildDeliveryNoteRows, downloadDeliveryNoteImage } from './lib/deliveryNote';
 import { calculateOrderTotal, canMixBox, defaultOrderLine, packSize, productBarcode, unitOf, wholeDefaultPrice } from './lib/orderPayload';
 import { localDate, money, normalAmount, normalSaleItems, orderDetailFlavor, orderDetailSpec, orderHasAfterSale, productDisplayName, uniqueSkuCount } from './lib/rules';
 import type { Employee, HistorySummary, OrderLineDraft, Product, ReportRow, SalesOrderItem, Screen, StoreAsset, VanStock } from './types';
@@ -7,7 +8,7 @@ import type { Employee, HistorySummary, OrderLineDraft, Product, ReportRow, Sale
 const LOADING_TEXT = '正在加载..';
 const ORDER_DRAFT_PREFIX = 'spr2_order_draft_v1';
 
-type DetailState = { orderNo: string; items: SalesOrderItem[]; hasAfterSale: boolean };
+type DetailState = { orderNo: string; orderDate: string; items: SalesOrderItem[]; hasAfterSale: boolean };
 type DetailGroup = { title: string; flavors: Map<string, number> };
 type StoredDraft = { date: string; lines: Record<string, OrderLineDraft>; selectedBrand?: string; selectedSpec?: string; mixBoxOpenKeys?: string[] };
 type StoreGroup = { letter: string; stores: StoreAsset[] };
@@ -33,6 +34,7 @@ export default function AppV3() {
   const [selectedSpec, setSelectedSpec] = useState('');
   const [mixBoxOpenKeys, setMixBoxOpenKeys] = useState<Set<string>>(new Set());
   const [qtyPopup, setQtyPopup] = useState<QtyPopupState | null>(null);
+  const [deliveryBusyOrderNo, setDeliveryBusyOrderNo] = useState<string | null>(null);
 
   useEffect(() => { void bootstrap(); }, []);
 
@@ -105,7 +107,7 @@ export default function AppV3() {
   async function openDetail(orderNo: string) {
     await run(async () => {
       const data = await loadOrderDetail(orderNo);
-      setDetail({ orderNo, items: data.items, hasAfterSale: orderHasAfterSale(data.order || {}, data.items) });
+      setDetail({ orderNo, orderDate: data.order?.created_at ? data.order.created_at.split('T')[0] : localDate(), items: data.items, hasAfterSale: orderHasAfterSale(data.order || {}, data.items) });
       setScreen('detail');
     });
   }
@@ -236,6 +238,22 @@ export default function AppV3() {
     });
   }
 
+  async function generateDeliveryNote(orderNo: string, orderDate: string, storeName = store?.store_name || '') {
+    if (!employee) return;
+    setDeliveryBusyOrderNo(orderNo);
+    try {
+      const data = await loadOrderDetail(orderNo);
+      const rows = buildDeliveryNoteRows(data.items, products);
+      if (!rows.length) { alert('该订单没有明细，无法生成单据'); return; }
+      const totalAmount = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+      await downloadDeliveryNoteImage({ storeName, rows, totalAmount: Number(totalAmount.toFixed(2)), employeeName: employee.name || employee.employee_code, orderDate });
+    } catch (err) {
+      alert(`生成单据失败: ${err instanceof Error ? err.message : '请重试'}`);
+    } finally {
+      setDeliveryBusyOrderNo(null);
+    }
+  }
+
   const filteredEmployees = useMemo(() => filterRows(employees, keyword, row => `${row.employee_code} ${row.name}`), [employees, keyword]);
   const visibleStores = useMemo(() => stores.filter(row => !String(row.atom_code).startsWith('NEW_')), [stores]);
   const filteredStores = useMemo(() => filterRows(visibleStores, keyword, row => `${row.atom_code} ${row.store_name}`), [visibleStores, keyword]);
@@ -257,9 +275,9 @@ export default function AppV3() {
         {loading && <div className="loading">{LOADING_TEXT}</div>}
         {screen === 'employees' && <EmployeeScreen employees={filteredEmployees} chooseEmployee={chooseEmployee} />}
         {screen === 'stores' && <StoreScreen keyword={keyword} stores={filteredStores} totalStores={visibleStores.length} groups={storeGroups} openHistory={openHistory} openStock={openStock} openReport={() => openReport()} openNewStoreManagement={openNewStoreManagement} />}
-        {screen === 'history' && store && <HistoryScreen store={store} history={history} openOrder={openOrder} openDetail={openDetail} loading={loading} />}
+        {screen === 'history' && store && <HistoryScreen store={store} history={history} openOrder={openOrder} openDetail={openDetail} generateDeliveryNote={generateDeliveryNote} deliveryBusy={deliveryBusyOrderNo !== null} loading={loading} />}
         {screen === 'newStore' && <NewStoreScreen stores={stores.filter(row => String(row.atom_code).startsWith('NEW_'))} triggerCreateNewStore={triggerCreateNewStore} openHistory={openHistory} deleteNewStore={deleteNewStore} />}
-        {screen === 'detail' && detail && <DetailScreen detail={detail} products={products} />}
+        {screen === 'detail' && detail && <DetailScreen detail={detail} products={products} storeName={store?.store_name || ''} generateDeliveryNote={generateDeliveryNote} deliveryBusy={deliveryBusyOrderNo !== null} />}
         {screen === 'report' && <ReportScreen date={reportDate} setDate={openReport} rows={reportRows} openDetail={openDetail} />}
         {screen === 'stock' && employee && <StockScreen employee={employee} allProducts={products} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} selectedSpec={selectedSpec} setSelectedSpec={setSelectedSpec} stockMap={stockMap} />}
         {screen === 'order' && store && <OrderScreen store={store} date={draftDate} setDate={setDraftDate} allProducts={products} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} selectedSpec={selectedSpec} setSelectedSpec={setSelectedSpec} lines={draftLines} mixBoxOpenKeys={mixBoxOpenKeys} setMixBoxOpenKeys={setMixBoxOpenKeys} updateDraft={updateDraft} updateSpecPrice={updateSpecPrice} openQtyPopup={setQtyPopup} saveOrder={saveOrder} />}
@@ -287,15 +305,15 @@ function StoreRows({ stores, openHistory }: { stores: StoreAsset[]; openHistory:
 function NewStoreScreen({ stores, triggerCreateNewStore, openHistory, deleteNewStore }: { stores: StoreAsset[]; triggerCreateNewStore: () => void; openHistory: (row: StoreAsset) => void; deleteNewStore: (row: StoreAsset) => void }) {
   return <><div className="big-store-title">🆕 新门店开单管理</div><button className="btn-new-order new-store-create" onClick={triggerCreateNewStore}>＋ 创建新门店并开单</button><div className="manual-store-heading">已开单的新门店列表 ({stores.length})</div>{stores.length === 0 ? <div className="sub empty manual-store-empty">暂无自主创建的新门店信息</div> : stores.map(row => <div className="history-item manual-store-card" key={row.atom_code} role="button" tabIndex={0} onClick={() => openHistory(row)} onKeyDown={event => { if (event.key === 'Enter') openHistory(row); }}><div className="manual-store-row"><strong>{row.store_name}</strong><button className="smallbtn manual-store-delete" onClick={event => { event.stopPropagation(); void deleteNewStore(row); }}>删除</button></div></div>)}</>;
 }
-function HistoryScreen({ store, history, openOrder, openDetail, loading }: { store: StoreAsset; history: HistorySummary[]; openOrder: () => void; openDetail: (orderNo: string) => void; loading: boolean }) {
+function HistoryScreen({ store, history, openOrder, openDetail, generateDeliveryNote, deliveryBusy, loading }: { store: StoreAsset; history: HistorySummary[]; openOrder: () => void; openDetail: (orderNo: string) => void; generateDeliveryNote: (orderNo: string, orderDate: string, storeName?: string) => void; deliveryBusy: boolean; loading: boolean }) {
   const isTemp = String(store.atom_code).startsWith('NEW_');
-  return <><div className="big-store-title">{store.store_name} {isTemp && <span className="new-store-badge">新门店</span>}</div><div style={{ margin: '14px 0' }}><button className="btn-new-order" onClick={openOrder}>＋ 新增单据</button></div>{history.map(row => { const date = row.created_at?.split('T')[0] || '未知日期'; return <button className="history-item history-item-compact" key={row.order_no} onClick={() => openDetail(row.order_no)}><div className="history-item-top"><span>实收：{money(row.saleSum || 0)}</span><span>{date}</span></div><div className="history-item-actions"><div className="history-item-meta">品项数: {row.skuCount || 0} 款 {row.hasAfterSale && <b className="badge">有售后</b>}</div><button className="delivery-note-btn delivery-note-btn-primary" type="button" onClick={event => event.stopPropagation()}>生成单据</button></div></button>; })}{!history.length && !loading && <div className="sub empty">暂无订单</div>}</>;
+  return <><div className="big-store-title">{store.store_name} {isTemp && <span className="new-store-badge">新门店</span>}</div><div style={{ margin: '14px 0' }}><button className="btn-new-order" onClick={openOrder}>＋ 新增单据</button></div>{history.map(row => { const date = row.created_at?.split('T')[0] || '未知日期'; return <button className="history-item history-item-compact" key={row.order_no} onClick={() => openDetail(row.order_no)}><div className="history-item-top"><span>实收：{money(row.saleSum || 0)}</span><span>{date}</span></div><div className="history-item-actions"><div className="history-item-meta">品项数: {row.skuCount || 0} 款 {row.hasAfterSale && <b className="badge">有售后</b>}</div><button className="delivery-note-btn delivery-note-btn-primary" type="button" disabled={deliveryBusy} onClick={event => { event.stopPropagation(); void generateDeliveryNote(row.order_no, date, store.store_name); }}>{deliveryBusy ? LOADING_TEXT : '生成单据'}</button></div></button>; })}{!history.length && !loading && <div className="sub empty">暂无订单</div>}</>;
 }
 
-function DetailScreen({ detail, products }: { detail: DetailState; products: Product[] }) {
+function DetailScreen({ detail, products, storeName, generateDeliveryNote, deliveryBusy }: { detail: DetailState; products: Product[]; storeName: string; generateDeliveryNote: (orderNo: string, orderDate: string, storeName?: string) => void; deliveryBusy: boolean }) {
   const total = normalAmount(detail.items);
   const grouped = groupOrderDetail(detail.items, products);
-  return <><div className="big-store-title">订单详情</div><div className="detail-action-row"><div className="detail-summary-actions"><div className="amount-summary-banner detail-amount-banner"><span><strong>实收：{money(total)}</strong></span>{detail.hasAfterSale && <b className="badge">有售后</b>}</div><button className="delivery-note-btn delivery-note-btn-primary detail-delivery-action" type="button">生成单据</button></div><div className="detail-secondary-actions"><button className="smallbtn detail-action-secondary">✏️ 修改</button><button className="smallbtn detail-danger-action">🗑️ 删除</button></div></div><div className="order-detail-list">{grouped.map(row => <div className="order-detail-row" key={row.title}><div className="order-detail-title">{row.title}</div><div className="order-detail-lines"><div className="order-detail-flavors">{Array.from(row.flavors.entries()).map(([flavor, qty]) => <div className="order-detail-flavor" key={flavor}><span>{flavor}</span><span>×{qty}</span></div>)}</div></div></div>)}</div></>;
+  return <><div className="big-store-title">订单详情</div><div className="detail-action-row"><div className="detail-summary-actions"><div className="amount-summary-banner detail-amount-banner"><span><strong>实收：{money(total)}</strong></span>{detail.hasAfterSale && <b className="badge">有售后</b>}</div><button className="delivery-note-btn delivery-note-btn-primary detail-delivery-action" type="button" disabled={deliveryBusy} onClick={() => generateDeliveryNote(detail.orderNo, detail.orderDate, storeName)}>{deliveryBusy ? LOADING_TEXT : '生成单据'}</button></div><div className="detail-secondary-actions"><button className="smallbtn detail-action-secondary">✏️ 修改</button><button className="smallbtn detail-danger-action">🗑️ 删除</button></div></div><div className="order-detail-list">{grouped.map(row => <div className="order-detail-row" key={row.title}><div className="order-detail-title">{row.title}</div><div className="order-detail-lines"><div className="order-detail-flavors">{Array.from(row.flavors.entries()).map(([flavor, qty]) => <div className="order-detail-flavor" key={flavor}><span>{flavor}</span><span>×{qty}</span></div>)}</div></div></div>)}</div></>;
 }
 
 function ReportScreen({ date, setDate, rows, openDetail }: { date: string; setDate: (date: string) => void; rows: ReportRow[]; openDetail: (orderNo: string) => void }) {

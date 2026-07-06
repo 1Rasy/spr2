@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 const main = readFileSync('src/main.tsx', 'utf8');
 const app = readFileSync('src/AppV3.tsx', 'utf8');
 const css = readFileSync('src/styles.css', 'utf8');
+const indexHtml = readFileSync('index.html', 'utf8');
+const deliveryNote = readFileSync('src/lib/deliveryNote.ts', 'utf8');
 
 assert.equal(main.includes("./ui-v2.css"), false, 'React entry should not load the rounded v2 shell when matching old SPR');
 assert.match(app, /id="searchBlock"/, 'store shell should keep old SPR searchBlock node');
@@ -53,3 +55,14 @@ assert.match(app, /qty-native-hidden/, 'native quantity selects should be visual
 assert.match(app, /售后数/, 'quantity popup should label after-sales quantity separately');
 assert.match(css, /\.qty-popup-mask/, 'quantity popup CSS should include old mask styling');
 assert.match(css, /\.qty-popup-number\.active/, 'quantity popup CSS should include old active number state');
+assert.match(indexHtml, /html2canvas@1\.4\.1/, 'delivery note should load the old html2canvas renderer');
+assert.match(app, /async function generateDeliveryNote/, 'delivery note buttons should call a real generator');
+assert.match(app, /generateDeliveryNote\(row\.order_no, date, store\.store_name\)/, 'history delivery note button should pass order number, date, and store name');
+assert.match(app, /generateDeliveryNote\(detail\.orderNo, detail\.orderDate, storeName\)/, 'detail delivery note button should pass current order context');
+assert.match(app, /deliveryBusyOrderNo/, 'delivery note generation should disable buttons while rendering');
+assert.match(deliveryNote, /function safeDeliveryFileName/, 'delivery note should keep old safe filename behavior');
+assert.match(deliveryNote, /delivery-note-capture-wrap/, 'delivery note should render offscreen before capture');
+assert.match(deliveryNote, /buildDeliveryNoteHtml/, 'delivery note should build the old printable table');
+assert.match(deliveryNote, /link\.download/, 'delivery note should download the generated PNG directly');
+assert.match(deliveryNote, /link\.click\(\)/, 'delivery note should click a temporary anchor like old SPR');
+assert.doesNotMatch(deliveryNote, /delivery-note-overlay|delivery-note-preview-img|openDeliveryImageFullscreen/, 'delivery note should not regress to preview overlay flow');
