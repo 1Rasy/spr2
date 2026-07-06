@@ -25,3 +25,11 @@ assert.match(app, /className="float-submit"[^>]*>提交账单</, 'submit button 
 assert.equal(app.includes('全部规格'), false, 'old SPR spec nav should not add a synthetic all-spec option');
 assert.match(css, /body\.store-search-mode #searchBlock/, 'search mode CSS should target old searchBlock id');
 assert.match(css, /\.mix-box-toggle/, 'CSS should contain old mix-box toggle styling');
+assert.match(app, /openNewStoreManagement/, 'new-store gate should open a real management view, not an alert placeholder');
+assert.match(app, /triggerCreateNewStore/, 'new-store flow should create a temporary NEW_ store before opening an order');
+assert.match(app, /NEW_/, 'manual store flow should use NEW_ atom codes like old SPR');
+assert.match(app, /deleteNewStore/, 'manual stores should expose a delete flow');
+assert.match(app, /countStoreOrders/, 'manual store delete should check existing order history first');
+assert.match(app, /deleteManualStore/, 'manual store delete should remove employee_store_assets rows');
+assert.equal(app.includes("alert('新门店功能后续迁移')"), false, 'new-store gate must not stay as a placeholder alert');
+assert.match(app, /已开单的新门店列表/, 'new-store management should show the old manual-store list label');

@@ -1,4 +1,4 @@
-export type Screen = 'employees' | 'stores' | 'history' | 'order' | 'detail' | 'report' | 'stock';
+export type Screen = 'employees' | 'stores' | 'history' | 'order' | 'detail' | 'report' | 'stock' | 'newStore';
 
 export interface Employee {
   id?: number | string;

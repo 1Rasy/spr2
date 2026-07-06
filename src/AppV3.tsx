@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { loadEmployees, loadHistory, loadItems, loadOrderDetail, loadOrdersByEmployee, loadProducts, loadStocks, loadStores, submitOrder } from './lib/api';
+import { countStoreOrders, createManualStore, deleteManualStore, loadEmployees, loadHistory, loadItems, loadOrderDetail, loadOrdersByEmployee, loadProducts, loadStocks, loadStores, submitOrder } from './lib/api';
 import { calculateOrderTotal, canMixBox, defaultOrderLine, packSize, productBarcode, unitOf, wholeDefaultPrice } from './lib/orderPayload';
 import { localDate, money, normalAmount, normalSaleItems, orderDetailFlavor, orderDetailSpec, orderHasAfterSale, productDisplayName, uniqueSkuCount } from './lib/rules';
 import type { Employee, HistorySummary, OrderLineDraft, Product, ReportRow, SalesOrderItem, Screen, StoreAsset, VanStock } from './types';
@@ -155,7 +155,7 @@ export default function AppV3() {
     if (screen === 'stores') { setEmployee(null); setStores([]); setScreen('employees'); return; }
     if (screen === 'history') { setStore(null); setScreen('stores'); return; }
     if (screen === 'detail') { setScreen('history'); return; }
-    if (screen === 'report' || screen === 'stock') { setScreen('stores'); return; }
+    if (screen === 'report' || screen === 'stock' || screen === 'newStore') { setScreen('stores'); return; }
     if (screen === 'order') {
       if (employee && store) clearDraft(draftKey(employee, store));
       setDraftLines({});
@@ -187,10 +187,45 @@ export default function AppV3() {
     });
   }
 
+  function openNewStoreManagement() {
+    setKeyword('');
+    setScreen('newStore');
+  }
+
+  function triggerCreateNewStore() {
+    const name = window.prompt('请输入自定义新门店的名称:');
+    if (!name?.trim()) { if (name !== null) window.alert('门店名称不能为空！'); return; }
+    const tempStore: StoreAsset = { employee_code: employee?.employee_code || '', atom_code: `NEW_${Math.random().toString(36).slice(2, 8).toUpperCase()}`, store_name: name.trim() };
+    setStore(tempStore);
+    const brands = orderedUnique(products, 'brand');
+    const brand = brands[0] || '';
+    setDraftLines({});
+    setDraftDate(localDate());
+    setSelectedBrand(brand);
+    setSelectedSpec(getSpecsForBrand(products, brand)[0] || '');
+    setMixBoxOpenKeys(new Set());
+    setScreen('order');
+  }
+
+  async function deleteNewStore(row: StoreAsset) {
+    if (!employee) return;
+    await run(async () => {
+      const count = await countStoreOrders(row.atom_code);
+      if (count > 0) { window.alert('先删除历史单据再删除门店'); return; }
+      if (!window.confirm(`确定删除 ${row.store_name} 吗？`)) return;
+      await deleteManualStore(employee.employee_code, row.atom_code);
+      setStores(prev => prev.filter(store => store.atom_code !== row.atom_code));
+    });
+  }
+
   async function saveOrder() {
     if (!employee || !store) return;
     if (!hasAnySale(products, draftLines)) { alert('⚠️ 空白单据无法提交！'); return; }
     await run(async () => {
+      if (String(store.atom_code).startsWith('NEW_') && !stores.some(row => row.atom_code === store.atom_code)) {
+        await createManualStore(employee.employee_code, store.atom_code, store.store_name);
+        setStores(prev => [...prev, { ...store, employee_code: employee.employee_code }].sort((a, b) => String(a.store_name).localeCompare(String(b.store_name), 'zh-CN')));
+      }
       const orderNo = await submitOrder({ employeeCode: employee.employee_code, atomCode: store.atom_code, storeName: store.store_name, date: draftDate, products, lines: draftLines });
       clearDraft(draftKey(employee, store));
       setDraftLines({});
@@ -220,8 +255,9 @@ export default function AppV3() {
         {error && <div className="error">❌ {error}</div>}
         {loading && <div className="loading">{LOADING_TEXT}</div>}
         {screen === 'employees' && <EmployeeScreen employees={filteredEmployees} chooseEmployee={chooseEmployee} />}
-        {screen === 'stores' && <StoreScreen keyword={keyword} stores={filteredStores} totalStores={visibleStores.length} groups={storeGroups} openHistory={openHistory} openStock={openStock} openReport={() => openReport()} />}
+        {screen === 'stores' && <StoreScreen keyword={keyword} stores={filteredStores} totalStores={visibleStores.length} groups={storeGroups} openHistory={openHistory} openStock={openStock} openReport={() => openReport()} openNewStoreManagement={openNewStoreManagement} />}
         {screen === 'history' && store && <HistoryScreen store={store} history={history} openOrder={openOrder} openDetail={openDetail} loading={loading} />}
+        {screen === 'newStore' && <NewStoreScreen stores={stores.filter(row => String(row.atom_code).startsWith('NEW_'))} triggerCreateNewStore={triggerCreateNewStore} openHistory={openHistory} deleteNewStore={deleteNewStore} />}
         {screen === 'detail' && detail && <DetailScreen detail={detail} products={products} />}
         {screen === 'report' && <ReportScreen date={reportDate} setDate={openReport} rows={reportRows} openDetail={openDetail} />}
         {screen === 'stock' && employee && <StockScreen employee={employee} allProducts={products} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} selectedSpec={selectedSpec} setSelectedSpec={setSelectedSpec} stockMap={stockMap} />}
@@ -238,13 +274,16 @@ function EmployeeScreen({ employees, chooseEmployee }: { employees: Employee[]; 
   return <div className="emp-grid">{employees.map(row => <button className="emp-card" key={row.employee_code} onClick={() => chooseEmployee(row)}><strong>{row.name}</strong><div className="sub">{row.employee_code}</div></button>)}</div>;
 }
 
-function StoreScreen({ keyword, stores, totalStores, groups, openHistory, openStock, openReport }: { keyword: string; stores: StoreAsset[]; totalStores: number; groups: StoreGroup[]; openHistory: (row: StoreAsset) => void; openStock: () => void; openReport: () => void }) {
-  return <><div className="store-top-gates"><button className="btn-gate-half btn-gate-stock" onClick={openStock}>📦 库存管理</button><button className="btn-gate-half btn-gate-report" onClick={openReport}>📊 卖进数据</button><button className="btn-gate-half btn-gate-newstore" onClick={() => alert('新门店功能后续迁移')}>🆕 新门店</button></div><div className="store-search-summary">门店总数：{totalStores} 家</div><div className="store-container">{keyword.trim() ? <StoreRows stores={stores} openHistory={openHistory} /> : groups.length ? groups.map(group => <div key={group.letter}><div id={`group_letter_${group.letter}`} className="letter-group-title">{group.letter}</div><StoreRows stores={group.stores} openHistory={openHistory} /></div>) : <div className="sub empty">⚠️ 未找到匹配的店铺</div>}</div></>;
+function StoreScreen({ keyword, stores, totalStores, groups, openHistory, openStock, openReport, openNewStoreManagement }: { keyword: string; stores: StoreAsset[]; totalStores: number; groups: StoreGroup[]; openHistory: (row: StoreAsset) => void; openStock: () => void; openReport: () => void; openNewStoreManagement: () => void }) {
+  return <><div className="store-top-gates"><button className="btn-gate-half btn-gate-stock" onClick={openStock}>📦 库存管理</button><button className="btn-gate-half btn-gate-report" onClick={openReport}>📊 卖进数据</button><button className="btn-gate-half btn-gate-newstore" onClick={openNewStoreManagement}>🆕 新门店</button></div><div className="store-search-summary">门店总数：{totalStores} 家</div><div className="store-container">{keyword.trim() ? <StoreRows stores={stores} openHistory={openHistory} /> : groups.length ? groups.map(group => <div key={group.letter}><div id={`group_letter_${group.letter}`} className="letter-group-title">{group.letter}</div><StoreRows stores={group.stores} openHistory={openHistory} /></div>) : <div className="sub empty">⚠️ 未找到匹配的店铺</div>}</div></>;
 }
 
 function StoreRows({ stores, openHistory }: { stores: StoreAsset[]; openHistory: (row: StoreAsset) => void }) {
   if (!stores.length) return <div className="sub empty">⚠️ 未找到匹配的店铺</div>;
   return <>{stores.map(row => <button className="item store-item" key={row.atom_code} onClick={() => openHistory(row)}><strong>{row.store_name}</strong><div className="sub">{row.atom_code}</div></button>)}</>;
+}
+function NewStoreScreen({ stores, triggerCreateNewStore, openHistory, deleteNewStore }: { stores: StoreAsset[]; triggerCreateNewStore: () => void; openHistory: (row: StoreAsset) => void; deleteNewStore: (row: StoreAsset) => void }) {
+  return <><div className="big-store-title">🆕 新门店开单管理</div><button className="btn-new-order new-store-create" onClick={triggerCreateNewStore}>＋ 创建新门店并开单</button><div className="manual-store-heading">已开单的新门店列表 ({stores.length})</div>{stores.length === 0 ? <div className="sub empty manual-store-empty">暂无自主创建的新门店信息</div> : stores.map(row => <div className="history-item manual-store-card" key={row.atom_code} role="button" tabIndex={0} onClick={() => openHistory(row)} onKeyDown={event => { if (event.key === 'Enter') openHistory(row); }}><div className="manual-store-row"><strong>{row.store_name}</strong><button className="smallbtn manual-store-delete" onClick={event => { event.stopPropagation(); void deleteNewStore(row); }}>删除</button></div></div>)}</>;
 }
 function HistoryScreen({ store, history, openOrder, openDetail, loading }: { store: StoreAsset; history: HistorySummary[]; openOrder: () => void; openDetail: (orderNo: string) => void; loading: boolean }) {
   const isTemp = String(store.atom_code).startsWith('NEW_');

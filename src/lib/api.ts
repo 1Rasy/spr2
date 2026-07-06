@@ -117,3 +117,29 @@ export async function submitOrder(params: {
 
   return orderNo;
 }
+export async function createManualStore(employeeCode: string, atomCode: string, storeName: string) {
+  const { error } = await supabase.from('employee_store_assets').insert({
+    employee_code: String(employeeCode),
+    atom_code: String(atomCode),
+    store_name: String(storeName),
+  });
+  if (error) throw error;
+}
+
+export async function countStoreOrders(atomCode: string) {
+  const { count, error } = await supabase
+    .from('sales_orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('atom_code', atomCode);
+  if (error) throw error;
+  return count || 0;
+}
+
+export async function deleteManualStore(employeeCode: string, atomCode: string) {
+  const { error } = await supabase
+    .from('employee_store_assets')
+    .delete()
+    .eq('employee_code', employeeCode)
+    .eq('atom_code', atomCode);
+  if (error) throw error;
+}
