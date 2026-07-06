@@ -83,8 +83,10 @@ export async function submitOrder(params: {
   date: string;
   products: Product[];
   lines: Record<string, OrderLineDraft>;
+  orderNo?: string;
+  previousStockByBarcode?: Map<string, number>;
 }) {
-  const orderNo = 'SO' + Date.now() + Math.floor(Math.random() * 1000);
+  const orderNo = params.orderNo || 'SO' + Date.now() + Math.floor(Math.random() * 1000);
   const liveStocks = await loadStocks(params.employeeCode);
   const liveMap = new Map(liveStocks.map(row => [String(row.product_barcode), Number(row.qty ?? row.stock_qty ?? 0)]));
   const payload = buildOrderPayload({
@@ -92,6 +94,7 @@ export async function submitOrder(params: {
     products: params.products,
     lines: params.lines,
     liveStock: liveMap,
+    previousStockByBarcode: params.previousStockByBarcode,
   });
   const { error } = await supabase.rpc('submit_sales_order_v2', {
     p_order_no: orderNo,
@@ -142,4 +145,28 @@ export async function deleteManualStore(employeeCode: string, atomCode: string) 
     .eq('employee_code', employeeCode)
     .eq('atom_code', atomCode);
   if (error) throw error;
+}
+
+export async function deleteExistingOrder(employeeCode: string, orderNo: string, items: SalesOrderItem[]) {
+  const liveStocks = await loadStocks(employeeCode);
+  const liveMap = new Map(liveStocks.map(row => [String(row.product_barcode), Number(row.qty ?? row.stock_qty ?? 0)]));
+  const restoreMap = new Map<string, number>();
+  items.forEach(item => {
+    const barcode = String(item.barcode || '');
+    if (!barcode) return;
+    restoreMap.set(barcode, Number(restoreMap.get(barcode) || 0) + Number(item.qty || 0));
+  });
+  const updates = Array.from(restoreMap.entries()).map(([barcode, qty]) => ({
+    employee_code: String(employeeCode),
+    product_barcode: barcode,
+    qty: Number(liveMap.get(barcode) || 0) + Number(qty || 0),
+  }));
+  const { error: itemError } = await supabase.from('sales_order_items').delete().eq('order_no', orderNo);
+  if (itemError) throw itemError;
+  const { error: orderError } = await supabase.from('sales_orders').delete().eq('order_no', orderNo);
+  if (orderError) throw orderError;
+  if (updates.length) {
+    const { error: stockError } = await supabase.from('van_stocks').upsert(updates, { onConflict: 'employee_code,product_barcode' });
+    if (stockError) throw stockError;
+  }
 }

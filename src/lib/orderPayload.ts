@@ -151,6 +151,7 @@ export function buildOrderPayload(params: {
   products: Product[];
   lines: Record<string, OrderLineDraft>;
   liveStock: Map<string, number>;
+  previousStockByBarcode?: Map<string, number>;
 }): OrderPayload {
   const items: SalesOrderItem[] = [];
   const stockUpdates: StockUpdate[] = [];
@@ -168,9 +169,11 @@ export function buildOrderPayload(params: {
     const afterSaleQty = number(normalized.afterSaleQty);
     const saleStockQty = wholeQty * packSize(product) + looseQty + mixQty;
     const netStockOut = saleStockQty - afterSaleQty;
+    const previousStockOut = number(params.previousStockByBarcode?.get(barcode));
+    const stockDelta = netStockOut - previousStockOut;
 
-    if (netStockOut !== 0 || saleStockQty > 0 || afterSaleQty > 0) {
-      stockUpdates.push({ product_barcode: barcode, qty: number(params.liveStock.get(barcode)) - netStockOut });
+    if (stockDelta !== 0 || saleStockQty > 0 || afterSaleQty > 0 || previousStockOut > 0) {
+      stockUpdates.push({ product_barcode: barcode, qty: number(params.liveStock.get(barcode)) - stockDelta });
     }
 
     if (wholeQty > 0) {

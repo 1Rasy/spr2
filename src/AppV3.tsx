@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { countStoreOrders, createManualStore, deleteManualStore, loadEmployees, loadHistory, loadItems, loadOrderDetail, loadOrdersByEmployee, loadProducts, loadStocks, loadStores, submitOrder } from './lib/api';
+import { countStoreOrders, createManualStore, deleteExistingOrder, deleteManualStore, loadEmployees, loadHistory, loadItems, loadOrderDetail, loadOrdersByEmployee, loadProducts, loadStocks, loadStores, submitOrder } from './lib/api';
 import { buildDeliveryNoteRows, downloadDeliveryNoteImage } from './lib/deliveryNote';
 import { calculateOrderTotal, canMixBox, defaultOrderLine, packSize, productBarcode, unitOf, wholeDefaultPrice } from './lib/orderPayload';
 import { localDate, money, normalAmount, normalSaleItems, orderDetailFlavor, orderDetailSpec, orderHasAfterSale, productDisplayName, uniqueSkuCount } from './lib/rules';
@@ -35,6 +35,8 @@ export default function AppV3() {
   const [mixBoxOpenKeys, setMixBoxOpenKeys] = useState<Set<string>>(new Set());
   const [qtyPopup, setQtyPopup] = useState<QtyPopupState | null>(null);
   const [deliveryBusyOrderNo, setDeliveryBusyOrderNo] = useState<string | null>(null);
+  const [editingOrderNo, setEditingOrderNo] = useState<string | null>(null);
+  const [previousStockByBarcode, setPreviousStockByBarcode] = useState<Map<string, number>>(new Map());
 
   useEffect(() => { void bootstrap(); }, []);
 
@@ -229,7 +231,7 @@ export default function AppV3() {
         await createManualStore(employee.employee_code, store.atom_code, store.store_name);
         setStores(prev => [...prev, { ...store, employee_code: employee.employee_code }].sort((a, b) => String(a.store_name).localeCompare(String(b.store_name), 'zh-CN')));
       }
-      const orderNo = await submitOrder({ employeeCode: employee.employee_code, atomCode: store.atom_code, storeName: store.store_name, date: draftDate, products, lines: draftLines });
+      const orderNo = await submitOrder({ employeeCode: employee.employee_code, atomCode: store.atom_code, storeName: store.store_name, date: draftDate, products, lines: draftLines, orderNo: editingOrderNo || undefined, previousStockByBarcode });
       clearDraft(draftKey(employee, store));
       setDraftLines({});
       setMixBoxOpenKeys(new Set());
@@ -238,6 +240,35 @@ export default function AppV3() {
     });
   }
 
+  async function editExistingOrder(orderNo: string) {
+    if (!store) return;
+    await run(async () => {
+      const data = await loadOrderDetail(orderNo);
+      const lines = orderItemsToDraftLines(data.items, products);
+      const previous = orderItemsStockMap(data.items);
+      const brands = orderedUnique(products, 'brand');
+      const firstEdited = products.find(product => lines[productBarcode(product)]);
+      const brand = firstEdited?.brand || brands[0] || '';
+      setEditingOrderNo(orderNo);
+      setPreviousStockByBarcode(previous);
+      setDraftLines(lines);
+      setDraftDate(data.order?.created_at ? data.order.created_at.split('T')[0] : localDate());
+      setSelectedBrand(brand);
+      setSelectedSpec(firstEdited?.spec || getSpecsForBrand(products, brand)[0] || '');
+      setMixBoxOpenKeys(new Set());
+      setScreen('order');
+    });
+  }
+
+  async function deleteOrder(orderNo: string) {
+    if (!employee || !store || !detail) return;
+    if (!window.confirm('确定删除本笔记录并返还库存量吗？')) return;
+    await run(async () => {
+      await deleteExistingOrder(employee.employee_code, orderNo, detail.items);
+      setDetail(null);
+      await openHistory(store);
+    });
+  }
   async function generateDeliveryNote(orderNo: string, orderDate: string, storeName = store?.store_name || '') {
     if (!employee) return;
     setDeliveryBusyOrderNo(orderNo);
@@ -277,7 +308,7 @@ export default function AppV3() {
         {screen === 'stores' && <StoreScreen keyword={keyword} stores={filteredStores} totalStores={visibleStores.length} groups={storeGroups} openHistory={openHistory} openStock={openStock} openReport={() => openReport()} openNewStoreManagement={openNewStoreManagement} />}
         {screen === 'history' && store && <HistoryScreen store={store} history={history} openOrder={openOrder} openDetail={openDetail} generateDeliveryNote={generateDeliveryNote} deliveryBusy={deliveryBusyOrderNo !== null} loading={loading} />}
         {screen === 'newStore' && <NewStoreScreen stores={stores.filter(row => String(row.atom_code).startsWith('NEW_'))} triggerCreateNewStore={triggerCreateNewStore} openHistory={openHistory} deleteNewStore={deleteNewStore} />}
-        {screen === 'detail' && detail && <DetailScreen detail={detail} products={products} storeName={store?.store_name || ''} generateDeliveryNote={generateDeliveryNote} deliveryBusy={deliveryBusyOrderNo !== null} />}
+        {screen === 'detail' && detail && <DetailScreen detail={detail} products={products} storeName={store?.store_name || ''} generateDeliveryNote={generateDeliveryNote} deliveryBusy={deliveryBusyOrderNo !== null} editExistingOrder={editExistingOrder} deleteOrder={deleteOrder} />}
         {screen === 'report' && <ReportScreen date={reportDate} setDate={openReport} rows={reportRows} openDetail={openDetail} />}
         {screen === 'stock' && employee && <StockScreen employee={employee} allProducts={products} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} selectedSpec={selectedSpec} setSelectedSpec={setSelectedSpec} stockMap={stockMap} />}
         {screen === 'order' && store && <OrderScreen store={store} date={draftDate} setDate={setDraftDate} allProducts={products} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} selectedSpec={selectedSpec} setSelectedSpec={setSelectedSpec} lines={draftLines} mixBoxOpenKeys={mixBoxOpenKeys} setMixBoxOpenKeys={setMixBoxOpenKeys} updateDraft={updateDraft} updateSpecPrice={updateSpecPrice} openQtyPopup={setQtyPopup} saveOrder={saveOrder} />}
@@ -310,10 +341,10 @@ function HistoryScreen({ store, history, openOrder, openDetail, generateDelivery
   return <><div className="big-store-title">{store.store_name} {isTemp && <span className="new-store-badge">新门店</span>}</div><div style={{ margin: '14px 0' }}><button className="btn-new-order" onClick={openOrder}>＋ 新增单据</button></div>{history.map(row => { const date = row.created_at?.split('T')[0] || '未知日期'; return <button className="history-item history-item-compact" key={row.order_no} onClick={() => openDetail(row.order_no)}><div className="history-item-top"><span>实收：{money(row.saleSum || 0)}</span><span>{date}</span></div><div className="history-item-actions"><div className="history-item-meta">品项数: {row.skuCount || 0} 款 {row.hasAfterSale && <b className="badge">有售后</b>}</div><button className="delivery-note-btn delivery-note-btn-primary" type="button" disabled={deliveryBusy} onClick={event => { event.stopPropagation(); void generateDeliveryNote(row.order_no, date, store.store_name); }}>{deliveryBusy ? LOADING_TEXT : '生成单据'}</button></div></button>; })}{!history.length && !loading && <div className="sub empty">暂无订单</div>}</>;
 }
 
-function DetailScreen({ detail, products, storeName, generateDeliveryNote, deliveryBusy }: { detail: DetailState; products: Product[]; storeName: string; generateDeliveryNote: (orderNo: string, orderDate: string, storeName?: string) => void; deliveryBusy: boolean }) {
+function DetailScreen({ detail, products, storeName, generateDeliveryNote, deliveryBusy, editExistingOrder, deleteOrder }: { detail: DetailState; products: Product[]; storeName: string; generateDeliveryNote: (orderNo: string, orderDate: string, storeName?: string) => void; deliveryBusy: boolean; editExistingOrder: (orderNo: string) => void; deleteOrder: (orderNo: string) => void }) {
   const total = normalAmount(detail.items);
   const grouped = groupOrderDetail(detail.items, products);
-  return <><div className="big-store-title">订单详情</div><div className="detail-action-row"><div className="detail-summary-actions"><div className="amount-summary-banner detail-amount-banner"><span><strong>实收：{money(total)}</strong></span>{detail.hasAfterSale && <b className="badge">有售后</b>}</div><button className="delivery-note-btn delivery-note-btn-primary detail-delivery-action" type="button" disabled={deliveryBusy} onClick={() => generateDeliveryNote(detail.orderNo, detail.orderDate, storeName)}>{deliveryBusy ? LOADING_TEXT : '生成单据'}</button></div><div className="detail-secondary-actions"><button className="smallbtn detail-action-secondary">✏️ 修改</button><button className="smallbtn detail-danger-action">🗑️ 删除</button></div></div><div className="order-detail-list">{grouped.map(row => <div className="order-detail-row" key={row.title}><div className="order-detail-title">{row.title}</div><div className="order-detail-lines"><div className="order-detail-flavors">{Array.from(row.flavors.entries()).map(([flavor, qty]) => <div className="order-detail-flavor" key={flavor}><span>{flavor}</span><span>×{qty}</span></div>)}</div></div></div>)}</div></>;
+  return <><div className="big-store-title">订单详情</div><div className="detail-action-row"><div className="detail-summary-actions"><div className="amount-summary-banner detail-amount-banner"><span><strong>实收：{money(total)}</strong></span>{detail.hasAfterSale && <b className="badge">有售后</b>}</div><button className="delivery-note-btn delivery-note-btn-primary detail-delivery-action" type="button" disabled={deliveryBusy} onClick={() => generateDeliveryNote(detail.orderNo, detail.orderDate, storeName)}>{deliveryBusy ? LOADING_TEXT : '生成单据'}</button></div><div className="detail-secondary-actions"><button className="smallbtn detail-action-secondary" onClick={() => editExistingOrder(detail.orderNo)}>✏️ 修改</button><button className="smallbtn detail-danger-action" onClick={() => deleteOrder(detail.orderNo)}>🗑️ 删除</button></div></div><div className="order-detail-list">{grouped.map(row => <div className="order-detail-row" key={row.title}><div className="order-detail-title">{row.title}</div><div className="order-detail-lines"><div className="order-detail-flavors">{Array.from(row.flavors.entries()).map(([flavor, qty]) => <div className="order-detail-flavor" key={flavor}><span>{flavor}</span><span>×{qty}</span></div>)}</div></div></div>)}</div></>;
 }
 
 function ReportScreen({ date, setDate, rows, openDetail }: { date: string; setDate: (date: string) => void; rows: ReportRow[]; openDetail: (orderNo: string) => void }) {
@@ -407,6 +438,45 @@ function normalizeProducts(products: Product[]) {
 
 function filterRows<T>(rows: T[], keyword: string, text: (row: T) => string) { const q = keyword.trim().toLowerCase(); return q ? rows.filter(row => text(row).toLowerCase().includes(q)) : rows; }
 function groupItemsByOrder(items: SalesOrderItem[]) { const grouped = new Map<string, SalesOrderItem[]>(); items.forEach(item => { const key = String(item.order_no); grouped.set(key, [...(grouped.get(key) || []), item]); }); return grouped; }
+function orderItemsStockMap(items: SalesOrderItem[]) {
+  const map = new Map<string, number>();
+  normalSaleItems(items).forEach(item => {
+    const barcode = String(item.barcode || '');
+    if (barcode) map.set(barcode, Number(map.get(barcode) || 0) + Number(item.qty || 0));
+  });
+  return map;
+}
+
+function orderItemsToDraftLines(items: SalesOrderItem[], products: Product[]) {
+  const lines: Record<string, OrderLineDraft> = {};
+  normalSaleItems(items).forEach(item => {
+    const barcode = String(item.barcode || '');
+    const product = products.find(row => productBarcode(row) === barcode || String(row.id) === barcode);
+    if (!product) return;
+    const line = lines[barcode] || defaultOrderLine(product);
+    const saleUnit = String(item.sale_unit || '');
+    const saleQty = Number(item.sale_qty ?? item.qty ?? 0);
+    const salePrice = Number(item.sale_unit_price ?? item.unit_price ?? 0);
+    if (saleUnit.includes('拼盒')) {
+      line.mixQty += saleQty;
+      line.mixBoxPrice = salePrice || line.mixBoxPrice;
+    } else if (saleUnit.includes('整')) {
+      line.wholeQty += saleQty;
+      line.wholePrice = salePrice || line.wholePrice;
+    } else if (item.sale_qty != null) {
+      line.looseQty += saleQty;
+      line.loosePrice = salePrice || line.loosePrice;
+    } else {
+      const qty = Number(item.qty || 0);
+      line.wholeQty += Math.floor(qty / packSize(product));
+      line.looseQty += qty % packSize(product);
+      line.loosePrice = Number(item.unit_price || line.loosePrice);
+      line.wholePrice = Number((line.loosePrice * packSize(product)).toFixed(2));
+    }
+    lines[barcode] = line;
+  });
+  return lines;
+}
 function groupOrderDetail(items: SalesOrderItem[], products: Product[]) { const grouped = new Map<string, DetailGroup>(); normalSaleItems(items).forEach(item => { const product = products.find(p => String(p.barcode) === String(item.barcode) || String(p.id) === String(item.barcode)); const title = orderDetailSpec(product, item.product_name || item.barcode); const flavor = orderDetailFlavor(product) || item.product_name || '默认'; const row = grouped.get(title) || { title, flavors: new Map<string, number>() }; const qty = Number(item.sale_qty ?? item.qty ?? 0); row.flavors.set(flavor, Number(row.flavors.get(flavor) || 0) + qty); grouped.set(title, row); }); return Array.from(grouped.values()); }
 function hasLineValue(line: OrderLineDraft) { return Number(line.wholeQty || 0) > 0 || Number(line.looseQty || 0) > 0 || Number(line.mixQty || 0) > 0 || Number(line.afterSaleQty || 0) > 0; }
 function hasAnySale(products: Product[], lines: Record<string, OrderLineDraft>) { return products.some(product => stockQtyFromLine(product, lines[productBarcode(product)]) > 0 || Number(lines[productBarcode(product)]?.afterSaleQty || 0) > 0); }

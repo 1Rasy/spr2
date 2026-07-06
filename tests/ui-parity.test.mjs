@@ -66,3 +66,12 @@ assert.match(deliveryNote, /buildDeliveryNoteHtml/, 'delivery note should build 
 assert.match(deliveryNote, /link\.download/, 'delivery note should download the generated PNG directly');
 assert.match(deliveryNote, /link\.click\(\)/, 'delivery note should click a temporary anchor like old SPR');
 assert.doesNotMatch(deliveryNote, /delivery-note-overlay|delivery-note-preview-img|openDeliveryImageFullscreen/, 'delivery note should not regress to preview overlay flow');
+assert.match(app, /async function editExistingOrder/, 'detail edit button should restore an existing order into the order editor');
+assert.match(app, /orderItemsToDraftLines/, 'existing order edit should convert old items back to draft lines');
+assert.match(app, /previousStockByBarcode/, 'existing order edit should keep old stock usage for delta stock updates');
+assert.match(app, /orderNo: editingOrderNo/, 'existing order submit should reuse the original order number');
+assert.match(app, /async function deleteOrder/, 'detail delete button should run a real delete flow');
+assert.match(app, /deleteExistingOrder/, 'detail delete should call the API delete and stock restore helper');
+assert.match(app, /确定删除本笔记录并返还库存量吗/, 'delete flow should keep the old SPR confirmation wording');
+assert.match(app, /onClick=\{\(\) => editExistingOrder\(detail\.orderNo\)\}/, 'detail edit button should be wired to editExistingOrder');
+assert.match(app, /onClick=\{\(\) => deleteOrder\(detail\.orderNo\)\}/, 'detail delete button should be wired to deleteOrder');

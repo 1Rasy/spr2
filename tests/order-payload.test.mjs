@@ -167,3 +167,23 @@ assert.throws(
   /拼盒已选 2个，必须按 6个成盒提交/,
 );
 
+
+const editedPayload = buildOrderPayload({
+  orderNo: 'SO_EDIT',
+  products,
+  liveStock: new Map([['A', 90]]),
+  previousStockByBarcode: new Map([['A', 8]]),
+  lines: {
+    A: {
+      barcode: 'A',
+      wholeQty: 1,
+      wholePrice: 12,
+      looseQty: 0,
+      loosePrice: 2,
+      mixQty: 0,
+      mixBoxPrice: 12,
+      afterSaleQty: 0,
+    },
+  },
+});
+assert.deepEqual(editedPayload.stockUpdates, [{ product_barcode: 'A', qty: 92 }]);
