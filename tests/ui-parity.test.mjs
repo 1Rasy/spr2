@@ -75,3 +75,10 @@ assert.match(app, /deleteExistingOrder/, 'detail delete should call the API dele
 assert.match(app, /确定删除本笔记录并返还库存量吗/, 'delete flow should keep the old SPR confirmation wording');
 assert.match(app, /onClick=\{\(\) => editExistingOrder\(detail\.orderNo\)\}/, 'detail edit button should be wired to editExistingOrder');
 assert.match(app, /onClick=\{\(\) => deleteOrder\(detail\.orderNo\)\}/, 'detail delete button should be wired to deleteOrder');
+assert.match(app, /type ReportPreset = 'today' \| 'yesterday' \| 'week' \| 'month' \| 'all' \| 'custom'/, 'report should support the old preset set');
+assert.match(app, /reportPreset/, 'report should track the active preset like old SPR');
+assert.match(app, /function getReportRange/, 'report should derive old SPR date ranges');
+assert.match(app, /\['today', '今天'\], \['yesterday', '昨天'\], \['week', '本周'\], \['month', '本月'\], \['all', '全部'\]/, 'report filters should render old preset buttons');
+assert.match(app, /id="reportDateInput"/, 'report custom date should keep the old reportDateInput hook');
+assert.match(app, /openReport\('custom', event\.target\.value\)/, 'report custom date should reload the custom day');
+assert.match(app, /preset === 'all'[\s\S]*start: '', end: ''/, 'report all preset should query without date bounds');
