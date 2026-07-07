@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const main = readFileSync('src/main.tsx', 'utf8');
 const app = readFileSync('src/AppV3.tsx', 'utf8');
+const api = readFileSync('src/lib/api.ts', 'utf8');
 const dashboard = readFileSync('src/DashboardApp.tsx', 'utf8');
 const employeesApp = readFileSync('src/EmployeesApp.tsx', 'utf8');
 const productsApp = readFileSync('src/ProductsApp.tsx', 'utf8');
@@ -138,7 +139,7 @@ assert.match(dashboard, /长湛库存/, 'dashboard should include the old CT sto
 assert.match(dashboard, /卖进金额/, 'dashboard should render old SPR sales metrics');
 assert.match(dashboard, /卖进趋势/, 'dashboard should render old SPR trend panel');
 assert.match(dashboard, /卖进排行/, 'dashboard should render old SPR employee rank panel');
-assert.match(dashboard, /downloadDashboardCsv/, 'dashboard export action should be functional instead of a placeholder');
+assert.match(dashboard, /exportOrderExcel/, 'dashboard export action should be functional instead of a placeholder');
 assert.match(css, /\.dashboard-shell/, 'dashboard should include old SPR admin shell styling');
 assert.match(css, /\.dashboard-nav-grid/, 'dashboard should include old SPR admin navigation grid styling');
 assert.match(app, /isEmployeesRoute/, 'employees route should mount the React employee management page');
@@ -217,3 +218,11 @@ assert.match(app, /getOrderEntryFromRoute/, 'order route should read old atom/na
 assert.match(app, /getStoreOrderDetailEntryFromRoute/, 'store route should support old order detail query param from report.html');
 assert.match(app, /openInitialOrderFromUrl/, 'bootstrap should open the requested store order from old order.html URLs');
 assert.match(app, /openInitialDetailFromUrl/, 'bootstrap should open requested order detail from old store.html?order URLs');
+assert.match(dashboard, /exportOrderExcel/, 'dashboard should implement old SPR xlsx order detail export');
+assert.match(dashboard, /loadItems/, 'dashboard export should load old order item details');
+assert.match(api, /sales_order_items/, 'dashboard export item loader should use old sales_order_items table');
+assert.match(dashboard, /loadProducts/, 'dashboard export should look up products for exported names and mix-box sizes');
+assert.match(dashboard, /writeFile/, 'dashboard export should write a real xlsx workbook like old SPR');
+assert.match(dashboard, /开单明细_/, 'dashboard export filename should use old order-detail wording');
+assert.doesNotMatch(dashboard, /downloadDashboardCsv/, 'dashboard should not keep CSV order export');
+assert.doesNotMatch(dashboard, /text\/csv/, 'dashboard export should not download CSV files');

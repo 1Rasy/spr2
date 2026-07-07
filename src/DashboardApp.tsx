@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { loadDashboardOrders, loadEmployees } from './lib/api';
+import { loadDashboardOrders, loadEmployees, loadItems, loadProducts } from './lib/api';
 import { money } from './lib/rules';
-import type { Employee, SalesOrder } from './types';
+import type { Employee, Product, SalesOrder, SalesOrderItem } from './types';
 
 type DashboardRange = 'today' | 'yesterday' | '7d' | 'month' | 'all';
 type DashboardRangeInfo = { start: string; end: string; label: string };
@@ -56,7 +56,7 @@ export default function DashboardApp() {
     <section className="dashboard-panel dashboard-filter-panel"><div className="dashboard-range-row">{(['today', 'yesterday', '7d', 'month', 'all'] as DashboardRange[]).map(value => <button key={value} className={`dashboard-range-btn ${range === value ? 'active' : ''}`} onClick={() => setRange(value)}>{dashboardRangeLabel(value)}</button>)}</div><div className="dashboard-employee-filter"><button className={`dashboard-employee-chip ${employeeCode ? '' : 'active'}`} onClick={() => setEmployeeCode('')}>全部员工</button>{employees.map(row => <button className={`dashboard-employee-chip ${employeeCode === String(row.employee_code) ? 'active' : ''}`} key={row.employee_code} onClick={() => setEmployeeCode(String(row.employee_code))}>{row.name || row.employee_code}</button>)}</div></section>
     <div className={`dashboard-status ${loading || error ? '' : 'hide'} ${error ? 'error' : ''}`}>{error || '正在加载...'}</div>
     <section className="dashboard-metric-grid"><MetricCard icon="💰" label="卖进金额" value={`¥ ${money(metrics.totalAmount)}`} /><MetricCard icon="🧾" label="卖进单据" value={String(metrics.orderCount)} /><MetricCard icon="📈" label="平均客单价" value={money(metrics.avgOrderAmount)} /></section>
-    <div className="dashboard-content-grid"><section className="dashboard-panel"><div className="dashboard-panel-title"><h2>卖进趋势</h2></div><TrendChart rows={trendRows} /></section><section className="dashboard-panel"><div className="dashboard-panel-title"><h2>卖进排行</h2><button className="dashboard-btn primary" onClick={() => downloadDashboardCsv(visibleOrders, employeeMap)}>导出开单单据</button></div><RankTable rows={rankRows} /></section></div>
+    <div className="dashboard-content-grid"><section className="dashboard-panel"><div className="dashboard-panel-title"><h2>卖进趋势</h2></div><TrendChart rows={trendRows} /></section><section className="dashboard-panel"><div className="dashboard-panel-title"><h2>卖进排行</h2><button className="dashboard-btn primary" onClick={() => { void exportOrderExcel(visibleOrders, employeeMap); }}>导出开单单据</button></div><RankTable rows={rankRows} /></section></div>
   </div>;
 }
 
@@ -138,15 +138,56 @@ function formatDashboardDate(value: string) {
   return `${date.getMonth() + 1}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
-function downloadDashboardCsv(orders: SalesOrder[], employeeMap: Map<string, Employee>) {
+type DashboardExportRow = { date: string; empName: string; empCode: string; atom: string; store: string; product: string; barcode: string; price: number; qty: number };
+type DashboardXlsx = { utils: { book_new: () => unknown; aoa_to_sheet: (data: unknown[][]) => Record<string, unknown>; book_append_sheet: (book: unknown, sheet: unknown, name: string) => void }; writeFile: (book: unknown, filename: string) => void };
+
+async function exportOrderExcel(orders: SalesOrder[], employeeMap: Map<string, Employee>) {
   if (!orders.length) { window.alert('当前筛选没有可导出的开单单据'); return; }
-  const header = ['开单日期', '员工', '员工号', '门店编号', '门店', '金额', '订单号'];
-  const rows = orders.map(order => [String(order.created_at || '').slice(0, 10), employeeMap.get(String(order.employee_code || ''))?.name || order.employee_code || '', order.employee_code || '', order.atom_code || order.store_atom_code || '', order.store_name || '', money(order.total_amount || 0), order.order_no || '']);
-  const csv = [header, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
-  const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `开单单据_${dateOnly(new Date())}.csv`;
-  link.click();
-  URL.revokeObjectURL(link.href);
+  if (!window.XLSX) { window.alert('Excel 导出组件加载失败，请刷新页面后重试'); return; }
+  const xlsx = window.XLSX as unknown as DashboardXlsx;
+  const orderNos = orders.map(order => String(order.order_no || '')).filter(Boolean);
+  if (!orderNos.length) { window.alert('当前单据缺少订单号，无法导出明细'); return; }
+  const [items, products] = await Promise.all([loadItems(orderNos), loadProducts()]);
+  const rows = buildDashboardExportRows(orders, items, products, employeeMap);
+  if (!rows.length) { window.alert('当前筛选没有开单明细可导出'); return; }
+  const headers = ['开单日期', '员工', '员工号', '门店编号', '门店', '商品名', '条码', '价格', '散数'];
+  const data = [headers, ...rows.map(row => [row.date, row.empName, row.empCode, row.atom, row.store, row.product, row.barcode, row.price, row.qty])];
+  const workbook = xlsx.utils.book_new();
+  const sheet = xlsx.utils.aoa_to_sheet(data);
+  sheet['!cols'] = buildDashboardExportColumnWidths(data);
+  xlsx.utils.book_append_sheet(workbook, sheet, '开单明细');
+  xlsx.writeFile(workbook, `开单明细_${dateOnly(new Date())}.xlsx`);
+}
+
+function buildDashboardExportRows(orders: SalesOrder[], items: SalesOrderItem[], products: Product[], employeeMap: Map<string, Employee>): DashboardExportRow[] {
+  const orderMap = new Map(orders.map(order => [String(order.order_no || ''), order]));
+  const productMap = new Map(products.map(product => [String(product.barcode || product.id || ''), product]));
+  return items.map(item => {
+    const order = orderMap.get(String(item.order_no || ''));
+    if (!order) return null;
+    const barcode = String(item.barcode || '');
+    const product = productMap.get(barcode);
+    const empCode = String(order.employee_code || '');
+    return {
+      date: String(order.created_at || '').slice(0, 10),
+      empName: employeeMap.get(empCode)?.name || empCode,
+      empCode,
+      atom: String(order.atom_code || order.store_atom_code || ''),
+      store: String(order.store_name || ''),
+      product: productExportName(product, item),
+      barcode,
+      price: Number(item.sale_unit_price ?? item.unit_price ?? 0),
+      qty: Number(item.sale_qty ?? item.qty ?? 0),
+    };
+  }).filter((row): row is DashboardExportRow => Boolean(row));
+}
+
+function productExportName(product: Product | undefined, item: SalesOrderItem) {
+  const spec = String(product?.spec || '').trim();
+  const flavor = String(product?.flavor || '').trim();
+  return (spec + flavor).trim() || product?.name || product?.product_name || item.product_name || String(item.barcode || '');
+}
+
+function buildDashboardExportColumnWidths(data: unknown[][]) {
+  return data[0].map((_, index) => ({ wch: Math.min(46, Math.max(8, ...data.map(row => String(row[index] ?? '').length + 2))) }));
 }
