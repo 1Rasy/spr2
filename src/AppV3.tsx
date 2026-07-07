@@ -10,7 +10,8 @@ const LOADING_TEXT = '正在加载..';
 const ORDER_DRAFT_PREFIX = 'spr2_order_draft_v1';
 
 type DetailState = { orderNo: string; orderDate: string; items: SalesOrderItem[]; hasAfterSale: boolean; afterSaleMap: Record<string, number> };
-type DetailSaleParts = { wholeQty: number; wholePrice: number; looseQty: number; loosePrice: number };
+type DetailPriceGroup = { qty: number; price: number };
+type DetailSaleParts = { wholeQty: number; wholePrice: number; looseQty: number; loosePrice: number; mixBoxGroups: Map<string, DetailPriceGroup> };
 type DetailFlavorRow = DetailSaleParts & { flavor: string };
 type DetailGroup = DetailSaleParts & { title: string; flavors: Map<string, DetailFlavorRow>; amount: number };
 type DetailAfterSaleRow = { barcode: string; title: string; flavor: string; qty: number; unit: string };
@@ -576,11 +577,16 @@ function groupOrderDetail(items: SalesOrderItem[], products: Product[]) {
     const product = findProductByBarcode(products, String(item.barcode || ''));
     const title = orderDetailSpec(product, item.product_name || item.barcode);
     const flavor = orderDetailFlavor(product) || item.product_name || '默认';
-    const row = grouped.get(title) || { title, flavors: new Map<string, DetailFlavorRow>(), wholeQty: 0, wholePrice: 0, looseQty: 0, loosePrice: 0, amount: 0 };
-    const flavorRow = row.flavors.get(flavor) || { flavor, wholeQty: 0, wholePrice: 0, looseQty: 0, loosePrice: 0 };
+    const row = grouped.get(title) || { title, flavors: new Map<string, DetailFlavorRow>(), wholeQty: 0, wholePrice: 0, looseQty: 0, loosePrice: 0, mixBoxGroups: new Map<string, DetailPriceGroup>(), amount: 0 };
+    const flavorRow = row.flavors.get(flavor) || { flavor, wholeQty: 0, wholePrice: 0, looseQty: 0, loosePrice: 0, mixBoxGroups: new Map<string, DetailPriceGroup>() };
     const qty = Number(item.sale_qty ?? item.qty ?? 0);
     const price = Number(item.sale_unit_price ?? item.unit_price ?? 0);
-    if (String(item.sale_unit || '').includes('整')) {
+    const amount = Number(item.amount || 0);
+    if (String(item.sale_unit || '').includes('拼')) {
+      const boxQty = price > 0 ? amount / price : 0;
+      addPriceGroup(row.mixBoxGroups, boxQty, price || amount);
+      addPriceGroup(flavorRow.mixBoxGroups, boxQty, price || amount);
+    } else if (String(item.sale_unit || '').includes('整')) {
       row.wholeQty += qty;
       row.wholePrice = price || row.wholePrice;
       flavorRow.wholeQty += qty;
@@ -597,10 +603,27 @@ function groupOrderDetail(items: SalesOrderItem[], products: Product[]) {
   });
   return Array.from(grouped.values());
 }
+function addPriceGroup(map: Map<string, DetailPriceGroup>, qty: number, price: number) {
+  const cleanQty = Number(qty || 0);
+  if (!cleanQty) return;
+  const cleanPrice = Number(price || 0);
+  const key = cleanPrice.toFixed(4);
+  const current = map.get(key) || { qty: 0, price: cleanPrice };
+  current.qty += cleanQty;
+  map.set(key, current);
+}
+function formatQtyNumber(value: number) {
+  const n = Number(value || 0);
+  return Number.isInteger(n) ? String(n) : Number(n.toFixed(2)).toString();
+}
+function priceGroupParts(map: Map<string, DetailPriceGroup>, unitText: string) {
+  return Array.from(map.values()).map(group => `${formatQtyNumber(group.qty)}${unitText} × ${money(group.price)}`);
+}
 function orderDetailPartsText(row: DetailSaleParts) {
   const parts: string[] = [];
-  if (row.looseQty) parts.push(`${row.looseQty}散 × ${money(row.loosePrice)}`);
-  if (row.wholeQty) parts.push(`${row.wholeQty}整 × ${money(row.wholePrice)}`);
+  if (row.looseQty) parts.push(`${formatQtyNumber(row.looseQty)}散 × ${money(row.loosePrice)}`);
+  if (row.wholeQty) parts.push(`${formatQtyNumber(row.wholeQty)}整 × ${money(row.wholePrice)}`);
+  parts.push(...priceGroupParts(row.mixBoxGroups, '盒'));
   return parts.join(' + ') || '-';
 }
 function buildAfterSaleDetailRows(afterSaleMap: Record<string, number>, products: Product[]) { return Object.entries(afterSaleMap).map(([barcode, qty]) => { const product = findProductByBarcode(products, barcode); return { barcode, title: orderDetailSpec(product, product?.product_name || barcode), flavor: orderDetailFlavor(product) || product?.product_name || barcode, qty: Number(qty || 0), unit: product ? unitOf(product) : '个' }; }).filter(row => row.qty > 0) as DetailAfterSaleRow[]; }

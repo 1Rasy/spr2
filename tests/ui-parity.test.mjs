@@ -94,6 +94,9 @@ assert.match(app, /orderDetailPartsText/, 'detail rows should render old SPR sol
 assert.match(app, /row\.flavors\.size > 1/, 'detail should show flavor breakdown only when a spec has multiple flavors');
 assert.match(app, /卖进：<strong>\{orderDetailPartsText\(row\)\}<\/strong>/, 'detail rows should show old sold-in line');
 assert.match(app, /金额：<strong>\{money\(row\.amount\)\}<\/strong>/, 'detail rows should show old amount line');
+assert.match(app, /mixBoxGroups/, 'detail aggregation should keep mix-box price groups like old SPR');
+assert.match(app, /priceGroupParts\(row\.mixBoxGroups, '盒'\)/, 'mix-box detail should render box quantity and box price');
+assert.match(app, /String\(item\.sale_unit \|\| ''\)\.includes\('拼'\)/, 'detail aggregation should detect 拼盒 sale units');
 assert.match(app, /order-detail-row-danger/, 'after-sales-only detail rows should use old danger row');
 assert.match(app, /orderItemsToDraftLines\(data\.items, products, parseAfterSaleRemark/, 'edit should restore after-sales quantities from order remark');
 assert.match(app, /type ReportPreset = 'today' \| 'yesterday' \| 'week' \| 'month' \| 'all' \| 'custom'/, 'report should support the old preset set');
