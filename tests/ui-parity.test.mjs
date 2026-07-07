@@ -92,6 +92,12 @@ assert.match(app, /afterSaleMap/, 'detail state should carry after-sales quantit
 assert.match(app, /order-detail-line-danger/, 'detail should render old after-sales danger line');
 assert.match(app, /orderDetailPartsText/, 'detail rows should render old SPR sold quantity and price text');
 assert.match(app, /row\.flavors\.size > 1/, 'detail should show flavor breakdown only when a spec has multiple flavors');
+assert.match(app, /function flavorQtyText/, 'detail flavor breakdown should use old compact quantity text');
+assert.match(app, /order-detail-flavors order-detail-flavors-compact/, 'detail flavor breakdown should use old compact flavor wrapper class');
+assert.match(app, /order-detail-flavor order-detail-flavor-compact/, 'detail flavor rows should use old compact row class');
+assert.match(css, /\.order-detail-flavors-compact/, 'detail compact flavor wrapper should have old SPR spacing');
+assert.match(css, /\.order-detail-flavor-compact b/, 'detail compact flavor quantity should have old muted inline style');
+assert.match(app, /flavorQtyText\(flavorRow\)/, 'detail flavor rows should not repeat price splits for each flavor');
 assert.match(app, /卖进：<strong>\{orderDetailPartsText\(row\)\}<\/strong>/, 'detail rows should show old sold-in line');
 assert.match(app, /金额：<strong>\{money\(row\.amount\)\}<\/strong>/, 'detail rows should show old amount line');
 assert.match(app, /mixBoxGroups/, 'detail aggregation should keep mix-box price groups like old SPR');
