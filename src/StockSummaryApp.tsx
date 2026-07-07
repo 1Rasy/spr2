@@ -7,7 +7,7 @@ type StockItem = VanStock & { product: StockProductInfo; qty: number };
 type StockEmployeeRow = { employee_code: string; name: string; is_active: boolean; itemCount: number; negativeCount: number; totalQty: number; lastUpdated: string; items: StockItem[] };
 type StatusState = { text: string; kind?: 'error' | 'ok' };
 type ParsedStockImportRow = { line: number; employee_code: string; product_barcode: string; qty: number };
-type XlsxLike = { read: (data: ArrayBuffer, options: { type: 'array'; cellDates?: boolean }) => { SheetNames: string[]; Sheets: Record<string, unknown> }; utils: { sheet_to_json: (sheet: unknown, options: { header: 1; raw: false; defval: string }) => unknown[][] } };
+type XlsxLike = { read: (data: ArrayBuffer | Uint8Array, options: Record<string, unknown>) => { SheetNames: string[]; Sheets: Record<string, unknown> }; utils: { sheet_to_json: (sheet: unknown, options: Record<string, unknown>) => unknown[][] } };
 declare global { interface Window { XLSX?: XlsxLike } }
 
 const VAN_STOCKS_TABLE = 'van_stocks';

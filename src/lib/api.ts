@@ -158,6 +158,30 @@ export async function loadOrderDetail(orderNo: string) {
 }
 
 
+
+export async function loadDealerCustomerWhitelist() {
+  const { data, error } = await supabase
+    .from('dealer_employee_mappings')
+    .select('customer_code, employee_code')
+    .not('customer_code', 'is', null)
+    .not('employee_code', 'is', null);
+  if (error) throw error;
+  const set = new Set<string>();
+  (data || []).forEach(row => {
+    const customerCode = String(row.customer_code || '').trim();
+    const employeeCode = String(row.employee_code || '').trim();
+    if (customerCode && employeeCode) set.add(customerCode);
+  });
+  return set;
+}
+
+export async function upsertRawDealerOutbounds(rows: Array<Record<string, unknown>>) {
+  for (let start = 0; start < rows.length; start += 500) {
+    const part = rows.slice(start, start + 500);
+    const { error } = await supabase.from('raw_dealer_outbounds').upsert(part, { onConflict: 'import_uid' });
+    if (error) throw error;
+  }
+}
 export async function loadStockSummaryData() {
   const [stockRes, empRows, productRows] = await Promise.all([
     supabase.from('van_stocks').select('employee_code, product_barcode, qty, updated_at').order('employee_code', { ascending: true }).limit(20000),

@@ -4,6 +4,7 @@ import DashboardApp from './DashboardApp';
 import EmployeesApp from './EmployeesApp';
 import ProductsApp from './ProductsApp';
 import StockSummaryApp from './StockSummaryApp';
+import DealerStockImportApp from './DealerStockImportApp';
 import { countStoreOrders, createManualStore, deleteExistingOrder, deleteManualStore, loadEmployees, loadHistory, loadItems, loadOrderDetail, loadOrdersByEmployee, loadProducts, loadStocks, loadStores, submitOrder } from './lib/api';
 import { buildDeliveryNoteRows, downloadDeliveryNoteImage } from './lib/deliveryNote';
 import { calculateOrderTotal, canMixBox, defaultOrderLine, packSize, productBarcode, unitOf, wholeDefaultPrice } from './lib/orderPayload';
@@ -46,12 +47,16 @@ function isDashboardRoute() { return window.location.pathname.replace(/\\.html$/
 function isEmployeesRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/employees'); }
 function isProductsRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/products'); }
 function isStockSummaryRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/stock_summary'); }
+function isStockJnRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/stock_jn'); }
+function isStockCtRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/stock_ct'); }
 
 export default function AppV3() {
   if (isDashboardRoute()) return <DashboardApp />;
   if (isEmployeesRoute()) return <EmployeesApp />;
   if (isProductsRoute()) return <ProductsApp />;
   if (isStockSummaryRoute()) return <StockSummaryApp />;
+  if (isStockJnRoute()) return <DealerStockImportApp kind="JN" />;
+  if (isStockCtRoute()) return <DealerStockImportApp kind="CT" />;
   const [screen, setScreen] = useState<Screen>('employees');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
