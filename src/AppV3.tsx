@@ -24,6 +24,7 @@ type DetailAfterSaleRow = { barcode: string; title: string; flavor: string; qty:
 type StoredDraft = { date: string; lines: Record<string, OrderLineDraft>; selectedBrand?: string; selectedSpec?: string; mixBoxOpenKeys?: string[] };
 type StockAdjustment = { dir: 'plus' | 'minus'; cases: number; boxes: number; pcs: number };
 type StoreGroup = { letter: string; stores: StoreAsset[] };
+type StoreSplitEntry = 'stock' | 'report' | 'new' | null;
 type ReportPreset = 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom';
 
 function getInitialEmployeeFromUrl(rows: Employee[]) {
@@ -45,6 +46,13 @@ function persistCurrentEmployee(row: Employee) {
   if (url.searchParams.toString() !== target) window.history.replaceState(null, '', `${url.pathname}?${target}${url.hash}`);
 }
 
+function getStoreSplitEntryFromRoute(): StoreSplitEntry {
+  const path = window.location.pathname.replace(/\.html$/, '');
+  if (path.endsWith('/store_stock')) return 'stock';
+  if (path.endsWith('/store_report')) return 'report';
+  if (path.endsWith('/store_new')) return 'new';
+  return null;
+}
 function isDashboardRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/dashboard'); }
 function isEmployeesRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/employees'); }
 function isProductsRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/products'); }
@@ -183,18 +191,49 @@ export default function AppV3() {
   async function bootstrap() {
     await run(async () => {
       const [empRows, productRows] = await Promise.all([loadEmployees(), loadProducts()]);
+      const normalizedProducts = normalizeProducts(productRows);
+      const splitEntry = getStoreSplitEntryFromRoute();
       setEmployees(empRows);
-      setProducts(normalizeProducts(productRows));
+      setProducts(normalizedProducts);
       const initialEmployee = getInitialEmployeeFromUrl(empRows);
-      if (initialEmployee) await openInitialEmployeeFromUrl(initialEmployee);
+      if (initialEmployee) await openInitialEmployeeFromUrl(initialEmployee, splitEntry, normalizedProducts);
     });
   }
 
-  async function openInitialEmployeeFromUrl(row: Employee) {
+  async function openInitialEmployeeFromUrl(row: Employee, splitEntry: StoreSplitEntry = null, productRows = products) {
     persistCurrentEmployee(row);
     setEmployee(row);
     setKeyword('');
-    setStores(await loadStores(row.employee_code));
+    const storeRows = await loadStores(row.employee_code);
+    setStores(storeRows);
+    if (splitEntry === 'stock') {
+      const brands = orderedUnique(productRows, 'brand');
+      const brand = brands[0] || '';
+      setSelectedBrand(brand);
+      setSelectedSpec(getSpecsForBrand(productRows, brand)[0] || '');
+      setStocks(await loadStocks(row.employee_code));
+      setStockAdjustments({});
+      setScreen('stock');
+      return;
+    }
+    if (splitEntry === 'report') {
+      const range = getReportRange('today', localDate());
+      const orders = await loadOrdersByEmployee(row.employee_code, range.start, range.end);
+      const items = await loadItems(orders.map(o => o.order_no));
+      const grouped = groupItemsByOrder(items);
+      setReportPreset('today');
+      setReportDate(range.label);
+      setReportRows(orders.map(order => {
+        const orderItems = grouped.get(String(order.order_no)) || [];
+        return { ...order, atomCode: String(order.atom_code || order.store_atom_code || ''), storeName: String(order.store_name || ''), orderDate: order.created_at ? order.created_at.split('T')[0] : '-', saleSum: normalAmount(orderItems), skuCount: uniqueSkuCount(orderItems), hasAfterSale: orderHasAfterSale(order, orderItems) };
+      }));
+      setScreen('report');
+      return;
+    }
+    if (splitEntry === 'new') {
+      setScreen('newStore');
+      return;
+    }
     setScreen('stores');
   }
 

@@ -206,3 +206,8 @@ assert.match(app, /0x51cf, 0x5e93/, 'stock management should include the old min
 assert.match(app, /upsertStockRows/, 'stock management should persist old van_stocks upserts');
 assert.match(css, /\.stock-input-group/, 'stock management should include old input-row styling');
 assert.match(css, /\.stock-dir-select/, 'stock management should include old plus-minus select styling');
+assert.match(app, /getStoreSplitEntryFromRoute/, 'store split routes should detect old SPR store_stock/store_report/store_new pages');
+assert.match(app, /store_stock/, 'store split routes should include old stock management entry URL');
+assert.match(app, /store_report/, 'store split routes should include old report entry URL');
+assert.match(app, /store_new/, 'store split routes should include old new-store entry URL');
+assert.match(app, /openInitialEmployeeFromUrl\(initialEmployee, splitEntry/, 'store split routes should enter the requested old sub-page after employee bootstrap');
