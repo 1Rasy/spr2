@@ -198,3 +198,11 @@ assert.match(storeImportApp, /temp_upload_assets/, 'store import should write th
 assert.match(storeImportApp, /sync_and_mask_assets/, 'store import should call the old sync_and_mask_assets RPC');
 assert.match(css, /\.store-import-shell/, 'store import should include old SPR import shell styling');
 assert.match(css, /\.store-import-upload/, 'store import should include old SPR upload-box styling');
+assert.match(app, /isStockRoute/, 'stock route should mount the old SPR standalone stock management page');
+assert.match(app, /stockAdjustments/, 'stock management should keep pending plus/minus quantity edits');
+assert.match(app, /0x66f4, 0x65b0, 0x5e93, 0x5b58/, 'stock management should restore the old submit button label');
+assert.match(app, /0x589e, 0x5e93/, 'stock management should include the old plus-stock mode');
+assert.match(app, /0x51cf, 0x5e93/, 'stock management should include the old minus-stock mode');
+assert.match(app, /upsertStockRows/, 'stock management should persist old van_stocks upserts');
+assert.match(css, /\.stock-input-group/, 'stock management should include old input-row styling');
+assert.match(css, /\.stock-dir-select/, 'stock management should include old plus-minus select styling');

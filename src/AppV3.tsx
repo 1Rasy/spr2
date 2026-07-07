@@ -6,7 +6,7 @@ import ProductsApp from './ProductsApp';
 import StockSummaryApp from './StockSummaryApp';
 import DealerStockImportApp from './DealerStockImportApp';
 import StoreImportApp from './StoreImportApp';
-import { countStoreOrders, createManualStore, deleteExistingOrder, deleteManualStore, loadEmployees, loadHistory, loadItems, loadOrderDetail, loadOrdersByEmployee, loadProducts, loadStocks, loadStores, submitOrder } from './lib/api';
+import { countStoreOrders, createManualStore, deleteExistingOrder, deleteManualStore, loadEmployees, loadHistory, loadItems, loadOrderDetail, loadOrdersByEmployee, loadProducts, loadStocks, loadStores, submitOrder, upsertStockRows } from './lib/api';
 import { buildDeliveryNoteRows, downloadDeliveryNoteImage } from './lib/deliveryNote';
 import { calculateOrderTotal, canMixBox, defaultOrderLine, packSize, productBarcode, unitOf, wholeDefaultPrice } from './lib/orderPayload';
 import { localDate, money, normalAmount, normalSaleItems, orderDetailFlavor, orderDetailSpec, orderHasAfterSale, parseAfterSaleRemark, productDisplayName, uniqueSkuCount } from './lib/rules';
@@ -22,6 +22,7 @@ type DetailFlavorRow = DetailSaleParts & { flavor: string };
 type DetailGroup = DetailSaleParts & { title: string; flavors: Map<string, DetailFlavorRow>; amount: number };
 type DetailAfterSaleRow = { barcode: string; title: string; flavor: string; qty: number; unit: string };
 type StoredDraft = { date: string; lines: Record<string, OrderLineDraft>; selectedBrand?: string; selectedSpec?: string; mixBoxOpenKeys?: string[] };
+type StockAdjustment = { dir: 'plus' | 'minus'; cases: number; boxes: number; pcs: number };
 type StoreGroup = { letter: string; stores: StoreAsset[] };
 type ReportPreset = 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom';
 
@@ -47,12 +48,68 @@ function persistCurrentEmployee(row: Employee) {
 function isDashboardRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/dashboard'); }
 function isEmployeesRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/employees'); }
 function isProductsRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/products'); }
+function isStockRoute() { const path = window.location.pathname.replace(/\\.html$/, ''); return path.endsWith('/stock'); }
 function isStockSummaryRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/stock_summary'); }
 function isStockJnRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/stock_jn'); }
 function isStockCtRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/stock_ct'); }
 function isStoreImportRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/store_import'); }
 
+function StockStandaloneApp() {
+  const [employee, setEmployee] = useState<Employee | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [stocks, setStocks] = useState<VanStock[]>([]);
+  const [selectedBrand, setSelectedBrand] = useState('');
+  const [selectedSpec, setSelectedSpec] = useState('');
+  const [stockAdjustments, setStockAdjustments] = useState<Record<string, StockAdjustment>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const stockMap = useMemo(() => new Map(stocks.map(row => [String(row.product_barcode), Number(row.qty ?? row.stock_qty ?? 0)])), [stocks]);
+
+  useEffect(() => { void bootstrapStockRoute(); }, []);
+
+  async function bootstrapStockRoute() {
+    setLoading(true);
+    setError('');
+    try {
+      const rows = normalizeProducts(await loadProducts());
+      const params = new URLSearchParams(window.location.search);
+      const code = (params.get('emp') || params.get('employee_code') || sessionStorage.getItem('current_employee_code') || '').trim();
+      const name = (params.get('name') || sessionStorage.getItem('current_employee_name') || code).trim();
+      if (!code) throw new Error('current employee missing; please choose employee again');
+      const current = { employee_code: code, name, is_active: true };
+      setEmployee(current);
+      setProducts(rows);
+      const brands = orderedUnique(rows, 'brand');
+      const brand = brands[0] || '';
+      setSelectedBrand(brand);
+      setSelectedSpec(getSpecsForBrand(rows, brand)[0] || '');
+      setStocks(await loadStocks(code));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function updateStockAdjustment(product: Product, patch: Partial<StockAdjustment>) {
+    const barcode = productBarcode(product);
+    setStockAdjustments(current => { const existing = current[barcode] || { dir: 'plus' as const, cases: 0, boxes: 0, pcs: 0 }; return { ...current, [barcode]: { ...existing, ...patch } }; });
+  }
+
+  async function submitStockAdjustments() {
+    if (!employee) return;
+    const updates = buildStockAdjustmentRows(employee.employee_code, products, stockMap, stockAdjustments);
+    if (!updates.length) { window.alert('please enter stock change'); return; }
+    await upsertStockRows(updates);
+    setStockAdjustments({});
+    setStocks(await loadStocks(employee.employee_code));
+    window.alert('库存更新成功');
+  }
+
+  return <div className="card stock-standalone-card"><div className="top-action-bar"><button className="back-btn" onClick={() => { window.location.href = 'store.html'; }}>返回</button></div><div id="list">{error && <div className="error">{error}</div>}{loading && <div className="loading">{LOADING_TEXT}</div>}{employee && <StockScreen employee={employee} allProducts={products} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} selectedSpec={selectedSpec} setSelectedSpec={setSelectedSpec} stockMap={stockMap} stockAdjustments={stockAdjustments} updateStockAdjustment={updateStockAdjustment} submitStockAdjustments={submitStockAdjustments} />}</div></div>;
+}
 export default function AppV3() {
+  if (isStockRoute()) return <StockStandaloneApp />;
   if (isDashboardRoute()) return <DashboardApp />;
   if (isEmployeesRoute()) return <EmployeesApp />;
   if (isProductsRoute()) return <ProductsApp />;
@@ -85,6 +142,7 @@ export default function AppV3() {
   const [deliveryBusyOrderNo, setDeliveryBusyOrderNo] = useState<string | null>(null);
   const [editingOrderNo, setEditingOrderNo] = useState<string | null>(null);
   const [previousStockByBarcode, setPreviousStockByBarcode] = useState<Map<string, number>>(new Map());
+  const [stockAdjustments, setStockAdjustments] = useState<Record<string, StockAdjustment>>({});
 
   useEffect(() => { void bootstrap(); }, []);
 
@@ -206,6 +264,22 @@ export default function AppV3() {
       setSelectedSpec(getSpecsForBrand(products, brand)[0] || '');
       setStocks(await loadStocks(employee.employee_code));
       setScreen('stock');
+    });
+  }
+  function updateStockAdjustment(product: Product, patch: Partial<StockAdjustment>) {
+    const barcode = productBarcode(product);
+    setStockAdjustments(current => { const existing = current[barcode] || { dir: 'plus' as const, cases: 0, boxes: 0, pcs: 0 }; return { ...current, [barcode]: { ...existing, ...patch } }; });
+  }
+
+  async function submitStockAdjustments() {
+    if (!employee) return;
+    await run(async () => {
+      const updates = buildStockAdjustmentRows(employee.employee_code, products, stockMap, stockAdjustments);
+      if (!updates.length) { window.alert('please enter stock change'); return; }
+      await upsertStockRows(updates);
+      setStockAdjustments({});
+      setStocks(await loadStocks(employee.employee_code));
+      window.alert('stock updated');
     });
   }
   function openOrder() {
@@ -386,7 +460,7 @@ export default function AppV3() {
         {screen === 'newStore' && <NewStoreScreen stores={stores.filter(row => String(row.atom_code).startsWith('NEW_'))} triggerCreateNewStore={triggerCreateNewStore} openHistory={openHistory} deleteNewStore={deleteNewStore} />}
         {screen === 'detail' && detail && <DetailScreen detail={detail} products={products} storeName={store?.store_name || ''} generateDeliveryNote={generateDeliveryNote} deliveryBusy={deliveryBusyOrderNo !== null} editExistingOrder={editExistingOrder} deleteOrder={deleteOrder} />}
         {screen === 'report' && <ReportScreen preset={reportPreset} customDate={reportDate} openReport={openReport} rows={reportRows} openDetail={openReportDetail} />}
-        {screen === 'stock' && employee && <StockScreen employee={employee} allProducts={products} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} selectedSpec={selectedSpec} setSelectedSpec={setSelectedSpec} stockMap={stockMap} />}
+        {screen === 'stock' && employee && <StockScreen employee={employee} allProducts={products} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} selectedSpec={selectedSpec} setSelectedSpec={setSelectedSpec} stockMap={stockMap} stockAdjustments={stockAdjustments} updateStockAdjustment={updateStockAdjustment} submitStockAdjustments={submitStockAdjustments} />}
         {screen === 'order' && store && <OrderScreen store={store} date={draftDate} setDate={setDraftDate} allProducts={products} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} selectedSpec={selectedSpec} setSelectedSpec={setSelectedSpec} lines={draftLines} mixBoxOpenKeys={mixBoxOpenKeys} setMixBoxOpenKeys={setMixBoxOpenKeys} updateDraft={updateDraft} updateSpecPrice={updateSpecPrice} openQtyPopup={setQtyPopup} saveOrder={saveOrder} />}
       </div>
       <div id="alphabetSidebar" className={`alphabet-sidebar ${sidebarLetters.length ? '' : 'hide'}`}>
@@ -432,13 +506,20 @@ function ReportScreen({ preset, customDate, openReport, rows, openDetail }: { pr
   return <><div className="big-store-title">📈 卖进数据</div><div id="reportFilters" className="report-filter-row">{buttons.map(([value, label]) => <button key={value} className={`smallbtn ${preset === value ? 'active' : ''}`} onClick={() => openReport(value)}>{label}</button>)}<div className="date-picker-wrapper"><button className={`smallbtn ${preset === 'custom' ? 'active' : ''}`} onClick={() => document.getElementById('reportDateInput') instanceof HTMLInputElement && (document.getElementById('reportDateInput') as HTMLInputElement).showPicker?.()}>日期选择</button><input id="reportDateInput" className="real-date-input report-date-input" type="date" value={customDate} onChange={event => event.target.value && openReport('custom', event.target.value)} /></div></div><div id="reportSummary" className="amount-summary-banner"><span><strong>总实收：{money(total)}</strong></span></div><div id="reportRows">{rows.length === 0 ? <div className="sub empty">⚠️ 暂无报表记录</div> : rows.map(row => <button className="history-item report-history-item" key={row.order_no} onClick={() => openDetail(row)}><div className="history-item-top"><strong>{row.storeName}</strong><span>{row.orderDate}</span></div><div className="history-item-actions"><div className="history-item-meta">品项: <strong>{row.skuCount}</strong> 种 {row.hasAfterSale && <b className="badge">有售后</b>}</div><div className="history-detail-hint">实收：{money(row.saleSum)}</div></div></button>)}</div></>;
 }
 
-function StockScreen({ employee, allProducts, selectedBrand, setSelectedBrand, selectedSpec, setSelectedSpec, stockMap }: { employee: Employee; allProducts: Product[]; selectedBrand: string; setSelectedBrand: (v: string) => void; selectedSpec: string; setSelectedSpec: (v: string) => void; stockMap: Map<string, number> }) {
+function StockScreen({ employee, allProducts, selectedBrand, setSelectedBrand, selectedSpec, setSelectedSpec, stockMap, stockAdjustments, updateStockAdjustment, submitStockAdjustments }: { employee: Employee; allProducts: Product[]; selectedBrand: string; setSelectedBrand: (v: string) => void; selectedSpec: string; setSelectedSpec: (v: string) => void; stockMap: Map<string, number>; stockAdjustments: Record<string, StockAdjustment>; updateStockAdjustment: (product: Product, patch: Partial<StockAdjustment>) => void; submitStockAdjustments: () => void }) {
   const brands = orderedUnique(allProducts, 'brand');
   const activeBrand = selectedBrand || brands[0] || '';
   const specs = getSpecsForBrand(allProducts, activeBrand);
   const activeSpec = specs.includes(selectedSpec) ? selectedSpec : specs[0] || '';
   const rows = orderedProducts(allProducts.filter(product => product.brand === activeBrand && product.spec === activeSpec));
-  return <><div className="sub stock-employee-title">🏢 库存查看：{employee.name || employee.employee_code}</div><FilterHeader products={allProducts} selectedBrand={activeBrand} setSelectedBrand={brand => { setSelectedBrand(brand); setSelectedSpec(getSpecsForBrand(allProducts, brand)[0] || ''); }} selectedSpec={activeSpec} setSelectedSpec={setSelectedSpec} />{rows.map(product => { const total = stockMap.get(productBarcode(product)) || 0; return <div className="stock-row" key={productBarcode(product)}><div className="stock-product-name">{displayProductName(product)}</div><div className="stock-qty">当前库存量: <strong>{formatQtyToUnits(total, product.pcs_per_case, product.pcs_per_box, unitOf(product))}</strong> ({total}{unitOf(product)})</div></div>; })}</>;
+  const title = String.fromCharCode(0x8f66, 0x5b58, 0x914d, 0x7f6e, 0xff1a);
+  const currentQtyLabel = String.fromCharCode(0x5f53, 0x524d, 0x8f66, 0x5b58, 0x91cf, 0x3a);
+  const plusText = String.fromCharCode(0x589e, 0x5e93);
+  const minusText = String.fromCharCode(0x51cf, 0x5e93);
+  const caseText = String.fromCharCode(0x7bb1);
+  const boxText = String.fromCharCode(0x76d2);
+  const submitText = String.fromCharCode(0x66f4, 0x65b0, 0x5e93, 0x5b58);
+  return <><div className="sub stock-employee-title">{title}{employee.name || employee.employee_code}</div><FilterHeader products={allProducts} selectedBrand={activeBrand} setSelectedBrand={brand => { setSelectedBrand(brand); setSelectedSpec(getSpecsForBrand(allProducts, brand)[0] || ''); }} selectedSpec={activeSpec} setSelectedSpec={setSelectedSpec} />{rows.map(product => { const barcode = productBarcode(product); const current = stockAdjustments[barcode] || { dir: 'plus', cases: 0, boxes: 0, pcs: 0 }; const total = stockMap.get(barcode) || 0; return <div className="stock-row" key={barcode}><div className="stock-product-name">{displayProductName(product)}</div><div className="stock-qty">{currentQtyLabel} <strong>{formatQtyToUnits(total, product.pcs_per_case, product.pcs_per_box, unitOf(product))}</strong> ({total}{unitOf(product)})</div><div className="stock-input-group"><select className="stock-dir-select" value={current.dir} onChange={event => updateStockAdjustment(product, { dir: event.target.value as 'plus' | 'minus' })}><option value="plus">{plusText}</option><option value="minus">{minusText}</option></select><div className="picker-wrapper"><select className="ios-picker" value={current.cases} onChange={event => updateStockAdjustment(product, { cases: Number(event.target.value || 0) })}>{makeQtyOptions(50).map(value => <option key={value} value={value}>{value}</option>)}</select><span className="unit-txt">{caseText}</span></div>{Number(product.pcs_per_box || 0) > 0 && <div className="picker-wrapper"><select className="ios-picker" value={current.boxes} onChange={event => updateStockAdjustment(product, { boxes: Number(event.target.value || 0) })}>{makeQtyOptions(50).map(value => <option key={value} value={value}>{value}</option>)}</select><span className="unit-txt">{boxText}</span></div>}<div className="picker-wrapper"><select className="ios-picker" value={current.pcs} onChange={event => updateStockAdjustment(product, { pcs: Number(event.target.value || 0) })}>{makeQtyOptions(100).map(value => <option key={value} value={value}>{value}</option>)}</select><span className="unit-txt">{unitOf(product)}</span></div></div></div>; })}<button className="float-submit" onClick={submitStockAdjustments}>{submitText}</button></>;
 }
 
 function OrderScreen({ store, date, setDate, allProducts, selectedBrand, setSelectedBrand, selectedSpec, setSelectedSpec, lines, mixBoxOpenKeys, setMixBoxOpenKeys, updateDraft, updateSpecPrice, openQtyPopup, saveOrder }: { store: StoreAsset; date: string; setDate: (v: string) => void; allProducts: Product[]; selectedBrand: string; setSelectedBrand: (v: string) => void; selectedSpec: string; setSelectedSpec: (v: string) => void; lines: Record<string, OrderLineDraft>; mixBoxOpenKeys: Set<string>; setMixBoxOpenKeys: (v: Set<string>) => void; updateDraft: (product: Product, patch: Partial<OrderLineDraft>) => void; updateSpecPrice: (product: Product, key: 'wholePrice' | 'loosePrice', value: number) => void; openQtyPopup: (state: QtyPopupState) => void; saveOrder: () => void }) {
@@ -544,6 +625,20 @@ function getReportRange(preset: ReportPreset, customDate = localDate()) {
 }
 function filterRows<T>(rows: T[], keyword: string, text: (row: T) => string) { const q = keyword.trim().toLowerCase(); return q ? rows.filter(row => text(row).toLowerCase().includes(q)) : rows; }
 function groupItemsByOrder(items: SalesOrderItem[]) { const grouped = new Map<string, SalesOrderItem[]>(); items.forEach(item => { const key = String(item.order_no); grouped.set(key, [...(grouped.get(key) || []), item]); }); return grouped; }
+function buildStockAdjustmentRows(employeeCode: string, products: Product[], stockMap: Map<string, number>, stockAdjustments: Record<string, StockAdjustment>) {
+  const rows: Array<{ employee_code: string; product_barcode: string; qty: number }> = [];
+  Object.entries(stockAdjustments).forEach(([barcode, change]) => {
+    const product = products.find(row => productBarcode(row) === barcode);
+    if (!product) return;
+    const delta = Number(change.cases || 0) * Number(product.pcs_per_case || 0) + Number(change.boxes || 0) * Number(product.pcs_per_box || 0) + Number(change.pcs || 0);
+    if (delta <= 0) return;
+    const currentQty = Number(stockMap.get(barcode) || 0);
+    const nextQty = change.dir === 'minus' ? currentQty - delta : currentQty + delta;
+    if (nextQty < 0) throw new Error(`[${displayProductName(product)}] 车存可用数不足扣减！`);
+    rows.push({ employee_code: employeeCode, product_barcode: barcode, qty: nextQty });
+  });
+  return rows;
+}
 function orderItemsStockMap(items: SalesOrderItem[]) {
   const map = new Map<string, number>();
   normalSaleItems(items).forEach(item => {
