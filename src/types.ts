@@ -85,3 +85,9 @@ export interface ReportRow extends HistorySummary {
   atomCode: string;
   storeName: string;
 }
+export interface DealerEmployeeMapping {
+  id?: number | string | null;
+  customer_code: string;
+  customer_name?: string | null;
+  employee_code?: string | null;
+}

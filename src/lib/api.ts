@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import { buildAfterSaleRemark, createdAtFromDate, localDate } from './rules';
 import { buildOrderPayload } from './orderPayload';
-import type { Employee, OrderLineDraft, Product, SalesOrder, SalesOrderItem, StoreAsset, VanStock } from '../types';
+import type { DealerEmployeeMapping, Employee, OrderLineDraft, Product, SalesOrder, SalesOrderItem, StoreAsset, VanStock } from '../types';
 
 export async function fetchAll<T>(table: string, columns = '*', pageSize = 1000) {
   const out: T[] = [];
@@ -16,6 +16,55 @@ export async function fetchAll<T>(table: string, columns = '*', pageSize = 1000)
   return out;
 }
 
+
+export async function loadEmployeeAdminData() {
+  const [employeesRes, mappingsRes] = await Promise.all([
+    supabase.from('employees').select('id, employee_code, name, is_active, created_at').order('employee_code', { ascending: true }),
+    supabase.from('dealer_employee_mappings').select('id, customer_code, customer_name, employee_code').order('customer_code', { ascending: true }),
+  ]);
+  if (employeesRes.error) throw employeesRes.error;
+  if (mappingsRes.error) throw mappingsRes.error;
+  return {
+    employees: (employeesRes.data || []) as Employee[],
+    mappings: (mappingsRes.data || []) as DealerEmployeeMapping[],
+  };
+}
+
+export async function createAdminEmployee(payload: Pick<Employee, 'employee_code' | 'name' | 'is_active'>) {
+  const { data, error } = await supabase
+    .from('employees')
+    .insert(payload)
+    .select('id, employee_code, name, is_active, created_at')
+    .single();
+  if (error) throw error;
+  return data as Employee;
+}
+
+export async function updateAdminEmployee(id: string | number, patch: Partial<Pick<Employee, 'employee_code' | 'name' | 'is_active'>>) {
+  const { data, error } = await supabase
+    .from('employees')
+    .update(patch)
+    .eq('id', id)
+    .select('id, employee_code, name, is_active, created_at')
+    .single();
+  if (error) throw error;
+  return data as Employee;
+}
+
+export async function unassignDealerEmployeeMapping(customerCode: string) {
+  const { error } = await supabase
+    .from('dealer_employee_mappings')
+    .update({ employee_code: null })
+    .eq('customer_code', customerCode);
+  if (error) throw error;
+}
+
+export async function upsertDealerEmployeeMapping(customerCode: string, employeeCode: string) {
+  const { error } = await supabase
+    .from('dealer_employee_mappings')
+    .upsert({ customer_code: customerCode, employee_code: employeeCode }, { onConflict: 'customer_code' });
+  if (error) throw error;
+}
 export async function loadEmployees() {
   const rows = await fetchAll<Employee>('employees', '*');
   return rows.filter(row => row.is_active !== false).sort((a, b) => String(a.employee_code).localeCompare(String(b.employee_code), 'zh-CN'));
