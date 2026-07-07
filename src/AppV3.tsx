@@ -9,7 +9,9 @@ const LOADING_TEXT = '正在加载..';
 const ORDER_DRAFT_PREFIX = 'spr2_order_draft_v1';
 
 type DetailState = { orderNo: string; orderDate: string; items: SalesOrderItem[]; hasAfterSale: boolean; afterSaleMap: Record<string, number> };
-type DetailGroup = { title: string; flavors: Map<string, number> };
+type DetailSaleParts = { wholeQty: number; wholePrice: number; looseQty: number; loosePrice: number };
+type DetailFlavorRow = DetailSaleParts & { flavor: string };
+type DetailGroup = DetailSaleParts & { title: string; flavors: Map<string, DetailFlavorRow>; amount: number };
 type DetailAfterSaleRow = { barcode: string; title: string; flavor: string; qty: number; unit: string };
 type StoredDraft = { date: string; lines: Record<string, OrderLineDraft>; selectedBrand?: string; selectedSpec?: string; mixBoxOpenKeys?: string[] };
 type StoreGroup = { letter: string; stores: StoreAsset[] };
@@ -398,7 +400,7 @@ function DetailScreen({ detail, products, storeName, generateDeliveryNote, deliv
   const afterSaleRows = buildAfterSaleDetailRows(detail.afterSaleMap, products);
   const groupedTitles = new Set(grouped.map(row => row.title));
   const afterOnlyRows = afterSaleRows.filter(row => !groupedTitles.has(row.title));
-  return <><div className="big-store-title">订单详情</div><div className="detail-action-row"><div className="detail-summary-actions"><div className="amount-summary-banner detail-amount-banner"><span><strong>实收：{money(total)}</strong></span>{detail.hasAfterSale && <b className="badge">有售后</b>}</div><button className="delivery-note-btn delivery-note-btn-primary detail-delivery-action" type="button" disabled={deliveryBusy} onClick={() => generateDeliveryNote(detail.orderNo, detail.orderDate, storeName)}>{deliveryBusy ? LOADING_TEXT : '生成单据'}</button></div><div className="detail-secondary-actions"><button className="smallbtn detail-action-secondary" onClick={() => editExistingOrder(detail.orderNo)}>✏️ 修改</button><button className="smallbtn detail-danger-action" onClick={() => deleteOrder(detail.orderNo)}>🗑️ 删除</button></div></div><div className="order-detail-list">{grouped.map(row => <div className="order-detail-row" key={row.title}><div className="order-detail-title">{row.title}</div><div className="order-detail-lines"><div className="order-detail-flavors">{Array.from(row.flavors.entries()).map(([flavor, qty]) => <div className="order-detail-flavor" key={flavor}><span>{flavor}</span><span>×{qty}</span></div>)}</div>{afterSaleRows.filter(afterRow => afterRow.title === row.title).map(afterRow => <div className="order-detail-line order-detail-line-danger" key={`after-${afterRow.barcode}`}>售后：<strong>{afterRow.qty}{afterRow.unit}</strong></div>)}</div></div>)}{afterOnlyRows.map(row => <div className="order-detail-row order-detail-row-danger" key={`after-only-${row.barcode}`}><div className="order-detail-title order-detail-title-danger">{row.title}</div><div className="order-detail-lines"><div className="order-detail-line order-detail-line-danger">售后：<strong>{row.qty}{row.unit}</strong></div></div></div>)}</div></>;
+  return <><div className="big-store-title">订单详情</div><div className="detail-action-row"><div className="detail-summary-actions"><div className="amount-summary-banner detail-amount-banner"><span><strong>实收：{money(total)}</strong></span>{detail.hasAfterSale && <b className="badge">有售后</b>}</div><button className="delivery-note-btn delivery-note-btn-primary detail-delivery-action" type="button" disabled={deliveryBusy} onClick={() => generateDeliveryNote(detail.orderNo, detail.orderDate, storeName)}>{deliveryBusy ? LOADING_TEXT : '生成单据'}</button></div><div className="detail-secondary-actions"><button className="smallbtn detail-action-secondary" onClick={() => editExistingOrder(detail.orderNo)}>✏️ 修改</button><button className="smallbtn detail-danger-action" onClick={() => deleteOrder(detail.orderNo)}>🗑️ 删除</button></div></div><div className="order-detail-list">{grouped.map(row => <div className="order-detail-row" key={row.title}><div className="order-detail-title">{row.title}</div><div className="order-detail-lines">{row.flavors.size > 1 && <div className="order-detail-flavors">{Array.from(row.flavors.values()).map(flavorRow => <div className="order-detail-flavor" key={flavorRow.flavor}><span>{flavorRow.flavor}</span><span>{orderDetailPartsText(flavorRow)}</span></div>)}</div>}<div className="order-detail-line">卖进：<strong>{orderDetailPartsText(row)}</strong></div><div className="order-detail-line">金额：<strong>{money(row.amount)}</strong></div>{afterSaleRows.filter(afterRow => afterRow.title === row.title).map(afterRow => <div className="order-detail-line order-detail-line-danger" key={`after-${afterRow.barcode}`}>售后：<strong>{afterRow.qty}{afterRow.unit}</strong></div>)}</div></div>)}{afterOnlyRows.map(row => <div className="order-detail-row order-detail-row-danger" key={`after-only-${row.barcode}`}><div className="order-detail-title order-detail-title-danger">{row.title}</div><div className="order-detail-lines"><div className="order-detail-line order-detail-line-danger">售后：<strong>{row.qty}{row.unit}</strong></div></div></div>)}</div></>;
 }
 
 function ReportScreen({ preset, customDate, openReport, rows, openDetail }: { preset: ReportPreset; customDate: string; openReport: (preset: ReportPreset, customDate?: string) => void; rows: ReportRow[]; openDetail: (row: ReportRow) => void }) {
@@ -567,7 +569,39 @@ function orderItemsToDraftLines(items: SalesOrderItem[], products: Product[], af
   });
   return lines;
 }
-function groupOrderDetail(items: SalesOrderItem[], products: Product[]) { const grouped = new Map<string, DetailGroup>(); normalSaleItems(items).forEach(item => { const product = findProductByBarcode(products, String(item.barcode || '')); const title = orderDetailSpec(product, item.product_name || item.barcode); const flavor = orderDetailFlavor(product) || item.product_name || '默认'; const row = grouped.get(title) || { title, flavors: new Map<string, number>() }; const qty = Number(item.sale_qty ?? item.qty ?? 0); row.flavors.set(flavor, Number(row.flavors.get(flavor) || 0) + qty); grouped.set(title, row); }); return Array.from(grouped.values()); }
+function groupOrderDetail(items: SalesOrderItem[], products: Product[]) {
+  const grouped = new Map<string, DetailGroup>();
+  normalSaleItems(items).forEach(item => {
+    const product = findProductByBarcode(products, String(item.barcode || ''));
+    const title = orderDetailSpec(product, item.product_name || item.barcode);
+    const flavor = orderDetailFlavor(product) || item.product_name || '默认';
+    const row = grouped.get(title) || { title, flavors: new Map<string, DetailFlavorRow>(), wholeQty: 0, wholePrice: 0, looseQty: 0, loosePrice: 0, amount: 0 };
+    const flavorRow = row.flavors.get(flavor) || { flavor, wholeQty: 0, wholePrice: 0, looseQty: 0, loosePrice: 0 };
+    const qty = Number(item.sale_qty ?? item.qty ?? 0);
+    const price = Number(item.sale_unit_price ?? item.unit_price ?? 0);
+    if (String(item.sale_unit || '').includes('整')) {
+      row.wholeQty += qty;
+      row.wholePrice = price || row.wholePrice;
+      flavorRow.wholeQty += qty;
+      flavorRow.wholePrice = price || flavorRow.wholePrice;
+    } else {
+      row.looseQty += qty;
+      row.loosePrice = price || row.loosePrice;
+      flavorRow.looseQty += qty;
+      flavorRow.loosePrice = price || flavorRow.loosePrice;
+    }
+    row.amount += Number(item.amount || 0);
+    row.flavors.set(flavor, flavorRow);
+    grouped.set(title, row);
+  });
+  return Array.from(grouped.values());
+}
+function orderDetailPartsText(row: DetailSaleParts) {
+  const parts: string[] = [];
+  if (row.looseQty) parts.push(`${row.looseQty}散 × ${money(row.loosePrice)}`);
+  if (row.wholeQty) parts.push(`${row.wholeQty}整 × ${money(row.wholePrice)}`);
+  return parts.join(' + ') || '-';
+}
 function buildAfterSaleDetailRows(afterSaleMap: Record<string, number>, products: Product[]) { return Object.entries(afterSaleMap).map(([barcode, qty]) => { const product = findProductByBarcode(products, barcode); return { barcode, title: orderDetailSpec(product, product?.product_name || barcode), flavor: orderDetailFlavor(product) || product?.product_name || barcode, qty: Number(qty || 0), unit: product ? unitOf(product) : '个' }; }).filter(row => row.qty > 0) as DetailAfterSaleRow[]; }
 function findProductByBarcode(products: Product[], barcode: string) { return products.find(product => productBarcode(product) === barcode || String(product.id) === barcode || String(product.barcode || '') === barcode); }
 function hasLineValue(line: OrderLineDraft) { return Number(line.wholeQty || 0) > 0 || Number(line.looseQty || 0) > 0 || Number(line.mixQty || 0) > 0 || Number(line.afterSaleQty || 0) > 0; }

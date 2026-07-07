@@ -86,6 +86,10 @@ assert.match(app, /onClick=\{\(\) => deleteOrder\(detail\.orderNo\)\}/, 'detail 
 assert.match(app, /parseAfterSaleRemark/, 'detail should parse after-sales remark metadata');
 assert.match(app, /afterSaleMap/, 'detail state should carry after-sales quantities');
 assert.match(app, /order-detail-line-danger/, 'detail should render old after-sales danger line');
+assert.match(app, /orderDetailPartsText/, 'detail rows should render old SPR sold quantity and price text');
+assert.match(app, /row\.flavors\.size > 1/, 'detail should show flavor breakdown only when a spec has multiple flavors');
+assert.match(app, /卖进：<strong>\{orderDetailPartsText\(row\)\}<\/strong>/, 'detail rows should show old sold-in line');
+assert.match(app, /金额：<strong>\{money\(row\.amount\)\}<\/strong>/, 'detail rows should show old amount line');
 assert.match(app, /order-detail-row-danger/, 'after-sales-only detail rows should use old danger row');
 assert.match(app, /orderItemsToDraftLines\(data\.items, products, parseAfterSaleRemark/, 'edit should restore after-sales quantities from order remark');
 assert.match(app, /type ReportPreset = 'today' \| 'yesterday' \| 'week' \| 'month' \| 'all' \| 'custom'/, 'report should support the old preset set');
