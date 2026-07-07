@@ -52,7 +52,14 @@ export async function loadOrdersByEmployee(employeeCode: string, startDate?: str
   if (error) throw error;
   return (data || []) as SalesOrder[];
 }
-
+export async function loadDashboardOrders(startDate?: string, endDate?: string) {
+  let query = supabase.from('sales_orders').select('*').order('created_at', { ascending: false }).limit(2000);
+  if (startDate) query = query.gte('created_at', `${startDate}T00:00:00+08:00`);
+  if (endDate) query = query.lte('created_at', `${endDate}T23:59:59+08:00`);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []) as SalesOrder[];
+}
 export async function loadItems(orderNos: string[]) {
   if (!orderNos.length) return [] as SalesOrderItem[];
   const { data, error } = await supabase.from('sales_order_items').select('*').in('order_no', orderNos);

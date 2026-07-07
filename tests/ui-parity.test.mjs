@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const main = readFileSync('src/main.tsx', 'utf8');
 const app = readFileSync('src/AppV3.tsx', 'utf8');
+const dashboard = readFileSync('src/DashboardApp.tsx', 'utf8');
 const css = readFileSync('src/styles.css', 'utf8');
 const indexHtml = readFileSync('index.html', 'utf8');
 const viteConfig = readFileSync('vite.config.ts', 'utf8');
@@ -122,3 +123,16 @@ assert.match(app, /setStore\(\{ employee_code: employee\?\.employee_code \|\| ''
 assert.match(app, /openDetail\(row\.order_no, true\)/, 'report detail should pass the from-report flag');
 assert.match(app, /detailFromReport \? void openReport\(reportPreset, reportDate\) : setScreen\('history'\)/, 'back from report detail should return to report');
 assert.match(app, /if \(detailFromReport\) await openReport\(reportPreset, reportDate\)/, 'deleting from report detail should return to report');
+assert.match(app, /isDashboardRoute/, 'dashboard route should render a React admin dashboard entry');
+assert.match(app, /<DashboardApp \/>/, 'dashboard route should mount DashboardApp without breaking the store app');
+assert.match(dashboard, /管理后台/, 'dashboard should restore old SPR admin title');
+assert.match(dashboard, /DASHBOARD_NAV/, 'dashboard should restore old SPR quick navigation');
+assert.match(dashboard, /导入门店/, 'dashboard should include the old store import entry');
+assert.match(dashboard, /吉能库存/, 'dashboard should include the old JN stock entry');
+assert.match(dashboard, /长湛库存/, 'dashboard should include the old CT stock entry');
+assert.match(dashboard, /卖进金额/, 'dashboard should render old SPR sales metrics');
+assert.match(dashboard, /卖进趋势/, 'dashboard should render old SPR trend panel');
+assert.match(dashboard, /卖进排行/, 'dashboard should render old SPR employee rank panel');
+assert.match(dashboard, /downloadDashboardCsv/, 'dashboard export action should be functional instead of a placeholder');
+assert.match(css, /\.dashboard-shell/, 'dashboard should include old SPR admin shell styling');
+assert.match(css, /\.dashboard-nav-grid/, 'dashboard should include old SPR admin navigation grid styling');
