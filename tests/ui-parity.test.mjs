@@ -211,3 +211,9 @@ assert.match(app, /store_stock/, 'store split routes should include old stock ma
 assert.match(app, /store_report/, 'store split routes should include old report entry URL');
 assert.match(app, /store_new/, 'store split routes should include old new-store entry URL');
 assert.match(app, /openInitialEmployeeFromUrl\(initialEmployee, splitEntry/, 'store split routes should enter the requested old sub-page after employee bootstrap');
+assert.match(app, /isReportRoute/, 'standalone report.html route should open the old SPR sale report page');
+assert.match(app, /isOrderRoute/, 'standalone order.html route should open the old SPR order page');
+assert.match(app, /getOrderEntryFromRoute/, 'order route should read old atom/name query params');
+assert.match(app, /getStoreOrderDetailEntryFromRoute/, 'store route should support old order detail query param from report.html');
+assert.match(app, /openInitialOrderFromUrl/, 'bootstrap should open the requested store order from old order.html URLs');
+assert.match(app, /openInitialDetailFromUrl/, 'bootstrap should open requested order detail from old store.html?order URLs');

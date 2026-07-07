@@ -25,6 +25,8 @@ type StoredDraft = { date: string; lines: Record<string, OrderLineDraft>; select
 type StockAdjustment = { dir: 'plus' | 'minus'; cases: number; boxes: number; pcs: number };
 type StoreGroup = { letter: string; stores: StoreAsset[] };
 type StoreSplitEntry = 'stock' | 'report' | 'new' | null;
+type OrderEntry = { atom: string; name: string } | null;
+type DetailEntry = { atom: string; name: string; orderNo: string } | null;
 type ReportPreset = 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom';
 
 function getInitialEmployeeFromUrl(rows: Employee[]) {
@@ -52,6 +54,22 @@ function getStoreSplitEntryFromRoute(): StoreSplitEntry {
   if (path.endsWith('/store_report')) return 'report';
   if (path.endsWith('/store_new')) return 'new';
   return null;
+}
+function isReportRoute() { return window.location.pathname.replace(/\.html$/, '').endsWith('/report'); }
+function isOrderRoute() { return window.location.pathname.replace(/\.html$/, '').endsWith('/order'); }
+function getOrderEntryFromRoute(): OrderEntry {
+  if (!isOrderRoute()) return null;
+  const params = new URLSearchParams(window.location.search);
+  const atom = (params.get('atom') || '').trim();
+  const name = (params.get('name') || '').trim();
+  return atom ? { atom, name } : null;
+}
+function getStoreOrderDetailEntryFromRoute(): DetailEntry {
+  const params = new URLSearchParams(window.location.search);
+  const orderNo = (params.get('order') || '').trim();
+  const atom = (params.get('atom') || '').trim();
+  const name = (params.get('name') || '').trim();
+  return orderNo && atom ? { atom, name, orderNo } : null;
 }
 function isDashboardRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/dashboard'); }
 function isEmployeesRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/employees'); }
@@ -192,11 +210,15 @@ export default function AppV3() {
     await run(async () => {
       const [empRows, productRows] = await Promise.all([loadEmployees(), loadProducts()]);
       const normalizedProducts = normalizeProducts(productRows);
-      const splitEntry = getStoreSplitEntryFromRoute();
+      const splitEntry = isReportRoute() ? 'report' : getStoreSplitEntryFromRoute();
+      const orderEntry = getOrderEntryFromRoute();
+      const detailEntry = getStoreOrderDetailEntryFromRoute();
       setEmployees(empRows);
       setProducts(normalizedProducts);
       const initialEmployee = getInitialEmployeeFromUrl(empRows);
-      if (initialEmployee) await openInitialEmployeeFromUrl(initialEmployee, splitEntry, normalizedProducts);
+      if (initialEmployee && orderEntry) await openInitialOrderFromUrl(initialEmployee, orderEntry, normalizedProducts);
+      else if (initialEmployee && detailEntry) await openInitialDetailFromUrl(initialEmployee, detailEntry);
+      else if (initialEmployee) await openInitialEmployeeFromUrl(initialEmployee, splitEntry, normalizedProducts);
     });
   }
 
@@ -237,6 +259,35 @@ export default function AppV3() {
     setScreen('stores');
   }
 
+  async function openInitialOrderFromUrl(row: Employee, entry: OrderEntry, productRows = products) {
+    if (!entry) return;
+    persistCurrentEmployee(row);
+    setEmployee(row);
+    setKeyword('');
+    setStores(await loadStores(row.employee_code));
+    const targetStore: StoreAsset = { employee_code: row.employee_code, atom_code: entry.atom, store_name: entry.name || entry.atom };
+    setStore(targetStore);
+    const brands = orderedUnique(productRows, 'brand');
+    const brand = brands[0] || '';
+    setDraftLines({});
+    setDraftDate(localDate());
+    setSelectedBrand(brand);
+    setSelectedSpec(getSpecsForBrand(productRows, brand)[0] || '');
+    setMixBoxOpenKeys(new Set());
+    setEditingOrderNo(null);
+    setPreviousStockByBarcode(new Map());
+    setScreen('order');
+  }
+
+  async function openInitialDetailFromUrl(row: Employee, entry: DetailEntry) {
+    if (!entry) return;
+    persistCurrentEmployee(row);
+    setEmployee(row);
+    setKeyword('');
+    setStores(await loadStores(row.employee_code));
+    setStore({ employee_code: row.employee_code, atom_code: entry.atom, store_name: entry.name || entry.atom });
+    await openDetail(entry.orderNo, false);
+  }
   async function chooseEmployee(row: Employee) {
     await run(async () => {
       persistCurrentEmployee(row);
