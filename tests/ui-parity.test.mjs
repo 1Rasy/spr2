@@ -75,6 +75,9 @@ assert.match(app, /async function editExistingOrder/, 'detail edit button should
 assert.match(app, /orderItemsToDraftLines/, 'existing order edit should convert old items back to draft lines');
 assert.match(app, /previousStockByBarcode/, 'existing order edit should keep old stock usage for delta stock updates');
 assert.match(app, /orderNo: editingOrderNo/, 'existing order submit should reuse the original order number');
+assert.match(app, /if \(screen === 'order' && editingOrderNo && detail\)/, 'back from editing an existing order should return to detail like old SPR');
+assert.match(app, /setEditingOrderNo\(null\)/, 'leaving order edit should clear the editing order state');
+assert.match(app, /if \(screen === 'order' && store && String\(store\.atom_code\)\.startsWith\('NEW_'\)\)/, 'back from a new-store order should return to new-store management');
 assert.match(app, /async function deleteOrder/, 'detail delete button should run a real delete flow');
 assert.match(app, /deleteExistingOrder/, 'detail delete should call the API delete and stock restore helper');
 assert.match(app, /确定删除本笔记录并返还库存量吗/, 'delete flow should keep the old SPR confirmation wording');

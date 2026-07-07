@@ -199,15 +199,22 @@ export default function AppV3() {
 
   function back() {
     setError('');
+    const clearOrderState = () => {
+      if (employee && store) clearDraft(draftKey(employee, store));
+      setDraftLines({});
+      setMixBoxOpenKeys(new Set());
+      setEditingOrderNo(null);
+      setPreviousStockByBarcode(new Map());
+    };
     if (screen === 'stores' && keyword.trim()) { setKeyword(''); return; }
     if (screen === 'stores') { setEmployee(null); setStores([]); setScreen('employees'); return; }
     if (screen === 'history') { setStore(null); setScreen('stores'); return; }
     if (screen === 'detail') { detailFromReport ? void openReport(reportPreset, reportDate) : setScreen('history'); return; }
     if (screen === 'report' || screen === 'stock' || screen === 'newStore') { setScreen('stores'); return; }
+    if (screen === 'order' && editingOrderNo && detail) { clearOrderState(); setScreen('detail'); return; }
+    if (screen === 'order' && store && String(store.atom_code).startsWith('NEW_')) { clearOrderState(); setScreen('newStore'); return; }
     if (screen === 'order') {
-      if (employee && store) clearDraft(draftKey(employee, store));
-      setDraftLines({});
-      setMixBoxOpenKeys(new Set());
+      clearOrderState();
       setScreen('history');
     }
   }
