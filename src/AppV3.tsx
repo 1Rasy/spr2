@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { pinyin } from 'pinyin-pro';
 import { countStoreOrders, createManualStore, deleteExistingOrder, deleteManualStore, loadEmployees, loadHistory, loadItems, loadOrderDetail, loadOrdersByEmployee, loadProducts, loadStocks, loadStores, submitOrder } from './lib/api';
 import { buildDeliveryNoteRows, downloadDeliveryNoteImage } from './lib/deliveryNote';
 import { calculateOrderTotal, canMixBox, defaultOrderLine, packSize, productBarcode, unitOf, wholeDefaultPrice } from './lib/orderPayload';
@@ -617,7 +618,7 @@ function orderedProducts(list: Product[]) { return [...list].sort(compareProduct
 function orderedUnique<K extends keyof Product>(list: Product[], key: K) { const seen = new Set<string>(); const out: string[] = []; orderedProducts(list).forEach(product => { const value = String(product[key] || '').trim(); if (value && !seen.has(value)) { seen.add(value); out.push(value); } }); return out; }
 function getSpecsForBrand(products: Product[], brand: string) { return orderedUnique(products.filter(product => String(product.brand || '') === String(brand || '')), 'spec'); }
 function displayProductName(product: Product) { return product.product_name || product.flavor || productDisplayName(product) || productBarcode(product); }
-function getStoreFirstLetter(name: string) { const first = String(name || '#').trim().charAt(0).toUpperCase(); return /[A-Z]/.test(first) ? first : '#'; }
+function getStoreFirstLetter(name: string) { try { const py = pinyin(name.trim().charAt(0), { pattern: 'first', toneType: 'none' }); const letter = String(py || '').charAt(0).toUpperCase(); return /[A-Z]/.test(letter) ? letter : '#'; } catch { return '#'; } }
 function groupStoresByLetter(stores: StoreAsset[]) { const map = new Map<string, StoreAsset[]>(); stores.forEach(store => { const letter = getStoreFirstLetter(store.store_name); map.set(letter, [...(map.get(letter) || []), store]); }); return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([letter, rows]) => ({ letter, stores: rows })); }
 function mixBoxKey(product: Product) { return `${product.brand || ''}|||${product.spec || ''}`; }
 function canMixBoxList(products: Product[]) { return products.some(canMixBox) && mixBoxSize(products) > 0; }

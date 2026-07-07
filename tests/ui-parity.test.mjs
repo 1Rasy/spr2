@@ -5,6 +5,7 @@ const main = readFileSync('src/main.tsx', 'utf8');
 const app = readFileSync('src/AppV3.tsx', 'utf8');
 const css = readFileSync('src/styles.css', 'utf8');
 const indexHtml = readFileSync('index.html', 'utf8');
+const viteConfig = readFileSync('vite.config.ts', 'utf8');
 const deliveryNote = readFileSync('src/lib/deliveryNote.ts', 'utf8');
 
 assert.equal(main.includes("./ui-v2.css"), false, 'React entry should not load the rounded v2 shell when matching old SPR');
@@ -18,6 +19,9 @@ assert.match(app, /sessionStorage\.setItem\('current_employee_code'/, 'app shoul
 assert.match(app, /openInitialEmployeeFromUrl/, 'bootstrap should auto-open stores when emp is provided');
 assert.match(app, /门店总数：/, 'store list should show old SPR total-store summary text');
 assert.match(app, /letter-group-title/, 'store list should group stores by first-letter headings');
+assert.match(app, /from 'pinyin-pro'/, 'store grouping should use pinyin-pro like old SPR');
+assert.match(viteConfig, /manualChunks[\s\S]*pinyin-pro[\s\S]*pinyin/, 'pinyin-pro should build as a separate chunk like the old CDN dependency');
+assert.match(app, /pinyin\(name\.trim\(\)\.charAt\(0\), \{ pattern: 'first', toneType: 'none' \}\)/, 'Chinese store names should group by pinyin first letter');
 assert.match(app, /📦 库存管理/, 'store gates should use old SPR stock label');
 assert.match(app, /📊 卖进数据/, 'store gates should use old SPR report label');
 assert.match(app, /🆕 新门店/, 'store gates should use old SPR new-store label');

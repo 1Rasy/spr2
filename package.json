@@ -12,10 +12,11 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.53.0",
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^5.4.19",
-    "typescript": "^5.8.3",
+    "pinyin-pro": "3.18.3",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "typescript": "^5.8.3",
+    "vite": "^5.4.19"
   },
   "devDependencies": {
     "@types/react": "^18.3.23",
