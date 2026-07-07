@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { pinyin } from 'pinyin-pro';
 import DashboardApp from './DashboardApp';
 import EmployeesApp from './EmployeesApp';
+import ProductsApp from './ProductsApp';
 import { countStoreOrders, createManualStore, deleteExistingOrder, deleteManualStore, loadEmployees, loadHistory, loadItems, loadOrderDetail, loadOrdersByEmployee, loadProducts, loadStocks, loadStores, submitOrder } from './lib/api';
 import { buildDeliveryNoteRows, downloadDeliveryNoteImage } from './lib/deliveryNote';
 import { calculateOrderTotal, canMixBox, defaultOrderLine, packSize, productBarcode, unitOf, wholeDefaultPrice } from './lib/orderPayload';
@@ -42,10 +43,12 @@ function persistCurrentEmployee(row: Employee) {
 
 function isDashboardRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/dashboard'); }
 function isEmployeesRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/employees'); }
+function isProductsRoute() { return window.location.pathname.replace(/\\.html$/, '').endsWith('/products'); }
 
 export default function AppV3() {
   if (isDashboardRoute()) return <DashboardApp />;
   if (isEmployeesRoute()) return <EmployeesApp />;
+  if (isProductsRoute()) return <ProductsApp />;
   const [screen, setScreen] = useState<Screen>('employees');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

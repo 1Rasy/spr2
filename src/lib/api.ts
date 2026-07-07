@@ -77,6 +77,37 @@ export async function loadStores(employeeCode: string) {
     .sort((a, b) => String(a.store_name).localeCompare(String(b.store_name), 'zh-CN'));
 }
 
+
+export async function loadAdminProducts() {
+  const { data, error } = await supabase
+    .from('products')
+    .select('id, sort_order, barcode, name, product_name, brand, spec, flavor, default_price, pcs_per_case, pcs_per_box, unit, allow_mix_box, is_active, created_at')
+    .order('sort_order', { ascending: true })
+    .order('id', { ascending: true });
+  if (error) throw error;
+  return (data || []) as Product[];
+}
+
+export async function createAdminProduct(payload: Partial<Product>) {
+  const { data, error } = await supabase
+    .from('products')
+    .insert(payload)
+    .select('id, sort_order, barcode, name, product_name, brand, spec, flavor, default_price, pcs_per_case, pcs_per_box, unit, allow_mix_box, is_active, created_at')
+    .single();
+  if (error) throw error;
+  return data as Product;
+}
+
+export async function updateAdminProduct(id: string | number, patch: Partial<Product>) {
+  const { data, error } = await supabase
+    .from('products')
+    .update(patch)
+    .eq('id', id)
+    .select('id, sort_order, barcode, name, product_name, brand, spec, flavor, default_price, pcs_per_case, pcs_per_box, unit, allow_mix_box, is_active, created_at')
+    .single();
+  if (error) throw error;
+  return data as Product;
+}
 export async function loadProducts() {
   const rows = await fetchAll<Product>('products', '*');
   return rows.filter(row => row.is_active !== false).sort((a, b) => String(a.brand || '').localeCompare(String(b.brand || ''), 'zh-CN'));
