@@ -159,6 +159,20 @@ export async function loadOrderDetail(orderNo: string) {
 
 
 
+
+export async function loadEmployeeCodeWhitelist() {
+  const rows = await fetchAll<Employee>('employees', 'employee_code');
+  return new Set(rows.map(row => String(row.employee_code || '').trim()).filter(Boolean));
+}
+
+export async function syncStoreImportAssets(rows: Array<{ employee_code: string; atom_code: string; store_name: string }>) {
+  const { error: deleteError } = await supabase.from('temp_upload_assets').delete().neq('employee_code', '_clear_all_');
+  if (deleteError) throw deleteError;
+  const { error: insertError } = await supabase.from('temp_upload_assets').insert(rows);
+  if (insertError) throw insertError;
+  const { error: rpcError } = await supabase.rpc('sync_and_mask_assets');
+  if (rpcError) throw rpcError;
+}
 export async function loadDealerCustomerWhitelist() {
   const { data, error } = await supabase
     .from('dealer_employee_mappings')
