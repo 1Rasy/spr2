@@ -82,3 +82,7 @@ assert.match(app, /\['today', '今天'\], \['yesterday', '昨天'\], \['week', '
 assert.match(app, /id="reportDateInput"/, 'report custom date should keep the old reportDateInput hook');
 assert.match(app, /openReport\('custom', event\.target\.value\)/, 'report custom date should reload the custom day');
 assert.match(app, /preset === 'all'[\s\S]*start: '', end: ''/, 'report all preset should query without date bounds');
+assert.match(app, /function formatQtyToUnits/, 'stock page should use old SPR stock-specific unit formatter');
+assert.match(app, /件 \$\{boxes\}中盒/, 'three-level stock display should include 件 and 中盒 units');
+assert.match(app, /formatQtyToUnits\(total, product\.pcs_per_case, product\.pcs_per_box, unitOf\(product\)\)/, 'stock page should render stock with the stock-specific formatter');
+assert.doesNotMatch(app, /stock-qty[\s\S]*formatStockQty\(total, product\)/, 'stock page should not use the sales whole-loose formatter');

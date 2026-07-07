@@ -363,7 +363,7 @@ function StockScreen({ employee, allProducts, selectedBrand, setSelectedBrand, s
   const specs = getSpecsForBrand(allProducts, activeBrand);
   const activeSpec = specs.includes(selectedSpec) ? selectedSpec : specs[0] || '';
   const rows = orderedProducts(allProducts.filter(product => product.brand === activeBrand && product.spec === activeSpec));
-  return <><div className="sub stock-employee-title">🏢 库存查看：{employee.name || employee.employee_code}</div><FilterHeader products={allProducts} selectedBrand={activeBrand} setSelectedBrand={brand => { setSelectedBrand(brand); setSelectedSpec(getSpecsForBrand(allProducts, brand)[0] || ''); }} selectedSpec={activeSpec} setSelectedSpec={setSelectedSpec} />{rows.map(product => { const total = stockMap.get(productBarcode(product)) || 0; return <div className="stock-row" key={productBarcode(product)}><div className="stock-product-name">{displayProductName(product)}</div><div className="stock-qty">当前库存量: <strong>{formatStockQty(total, product)}</strong> ({total}{unitOf(product)})</div></div>; })}</>;
+  return <><div className="sub stock-employee-title">🏢 库存查看：{employee.name || employee.employee_code}</div><FilterHeader products={allProducts} selectedBrand={activeBrand} setSelectedBrand={brand => { setSelectedBrand(brand); setSelectedSpec(getSpecsForBrand(allProducts, brand)[0] || ''); }} selectedSpec={activeSpec} setSelectedSpec={setSelectedSpec} />{rows.map(product => { const total = stockMap.get(productBarcode(product)) || 0; return <div className="stock-row" key={productBarcode(product)}><div className="stock-product-name">{displayProductName(product)}</div><div className="stock-qty">当前库存量: <strong>{formatQtyToUnits(total, product.pcs_per_case, product.pcs_per_box, unitOf(product))}</strong> ({total}{unitOf(product)})</div></div>; })}</>;
 }
 
 function OrderScreen({ store, date, setDate, allProducts, selectedBrand, setSelectedBrand, selectedSpec, setSelectedSpec, lines, mixBoxOpenKeys, setMixBoxOpenKeys, updateDraft, updateSpecPrice, openQtyPopup, saveOrder }: { store: StoreAsset; date: string; setDate: (v: string) => void; allProducts: Product[]; selectedBrand: string; setSelectedBrand: (v: string) => void; selectedSpec: string; setSelectedSpec: (v: string) => void; lines: Record<string, OrderLineDraft>; mixBoxOpenKeys: Set<string>; setMixBoxOpenKeys: (v: Set<string>) => void; updateDraft: (product: Product, patch: Partial<OrderLineDraft>) => void; updateSpecPrice: (product: Product, key: 'wholePrice' | 'loosePrice', value: number) => void; openQtyPopup: (state: QtyPopupState) => void; saveOrder: () => void }) {
@@ -529,4 +529,18 @@ function canMixBoxList(products: Product[]) { return products.some(canMixBox) &&
 function mixBoxSize(products: Product[]) { return Number(products.find(product => Number(product.pcs_per_box || 0) > 0)?.pcs_per_box || 0); }
 function makeQtyOptions(max: number) { return Array.from({ length: max + 1 }, (_, index) => index); }
 function makePriceOptions(center: number, current: number, step = 0.05) { const c = Number(center || 0); const cur = Number(current || 0); let start = Math.max(0, c - 15); let end = c + 30; if (cur < start) start = Math.max(0, cur - 1); if (cur > end) end = cur + 1; const out: number[] = []; for (let value = start; value <= end + 0.001; value += step) out.push(Number(value.toFixed(2))); return out; }
+function formatQtyToUnits(totalPcs: number, specCase?: number, specBox?: number, unit = '个') {
+  const sign = Number(totalPcs) < 0 ? '-' : '';
+  let rest = Math.abs(Number(totalPcs) || 0);
+  const caseSize = Number(specCase) || 1;
+  const boxSize = Number(specBox) || 0;
+  const cases = Math.floor(rest / caseSize);
+  rest %= caseSize;
+  if (boxSize > 0) {
+    const boxes = Math.floor(rest / boxSize);
+    const loose = rest % boxSize;
+    return `${sign}${cases}件 ${boxes}中盒 ${loose}${unit}`;
+  }
+  return `${sign}${cases}件 ${rest}${unit}`;
+}
 function formatStockQty(total: number, product: Product) { const q = Number(total) || 0; const size = packSize(product); const whole = Math.floor(Math.abs(q) / size); const loose = Math.abs(q) % size; const sign = q < 0 ? '-' : ''; return `${sign}${whole}整 ${loose}${unitOf(product)}`; }
