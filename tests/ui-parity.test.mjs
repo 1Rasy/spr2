@@ -12,6 +12,10 @@ assert.match(app, /id="searchBlock"/, 'store shell should keep old SPR searchBlo
 assert.match(app, /id="list"/, 'store shell should keep old SPR list node');
 assert.match(app, /id="alphabetSidebar"/, 'store shell should keep old SPR alphabet sidebar node');
 assert.match(app, /className="top-action-bar"/, 'store shell should render old top action bar');
+assert.match(app, /function getInitialEmployeeFromUrl/, 'app should support old SPR emp URL entry');
+assert.match(app, /URLSearchParams\(window\.location\.search\)/, 'app should read emp and employee_code query params like old SPR');
+assert.match(app, /sessionStorage\.setItem\('current_employee_code'/, 'app should persist current employee code for old SPR entry compatibility');
+assert.match(app, /openInitialEmployeeFromUrl/, 'bootstrap should auto-open stores when emp is provided');
 assert.match(app, /门店总数：/, 'store list should show old SPR total-store summary text');
 assert.match(app, /letter-group-title/, 'store list should group stores by first-letter headings');
 assert.match(app, /📦 库存管理/, 'store gates should use old SPR stock label');

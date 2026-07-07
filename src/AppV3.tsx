@@ -15,6 +15,25 @@ type StoredDraft = { date: string; lines: Record<string, OrderLineDraft>; select
 type StoreGroup = { letter: string; stores: StoreAsset[] };
 type ReportPreset = 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom';
 
+function getInitialEmployeeFromUrl(rows: Employee[]) {
+  const params = new URLSearchParams(window.location.search);
+  const code = (params.get('emp') || params.get('employee_code') || sessionStorage.getItem('current_employee_code') || '').trim();
+  if (!code) return null;
+  const name = (params.get('name') || sessionStorage.getItem('current_employee_name') || code).trim();
+  return rows.find(row => String(row.employee_code) === code) || { employee_code: code, name, is_active: true };
+}
+
+function persistCurrentEmployee(row: Employee) {
+  sessionStorage.setItem('current_employee_code', String(row.employee_code));
+  if (row.name) sessionStorage.setItem('current_employee_name', String(row.name));
+  const params = new URLSearchParams(window.location.search);
+  const queryCode = (params.get('emp') || params.get('employee_code') || '').trim();
+  if (!queryCode) return;
+  const url = new URL(window.location.href);
+  const target = `emp=${encodeURIComponent(String(row.employee_code))}`;
+  if (url.searchParams.toString() !== target) window.history.replaceState(null, '', `${url.pathname}?${target}${url.hash}`);
+}
+
 export default function AppV3() {
   const [screen, setScreen] = useState<Screen>('employees');
   const [loading, setLoading] = useState(false);
@@ -83,11 +102,22 @@ export default function AppV3() {
       const [empRows, productRows] = await Promise.all([loadEmployees(), loadProducts()]);
       setEmployees(empRows);
       setProducts(normalizeProducts(productRows));
+      const initialEmployee = getInitialEmployeeFromUrl(empRows);
+      if (initialEmployee) await openInitialEmployeeFromUrl(initialEmployee);
     });
+  }
+
+  async function openInitialEmployeeFromUrl(row: Employee) {
+    persistCurrentEmployee(row);
+    setEmployee(row);
+    setKeyword('');
+    setStores(await loadStores(row.employee_code));
+    setScreen('stores');
   }
 
   async function chooseEmployee(row: Employee) {
     await run(async () => {
+      persistCurrentEmployee(row);
       setEmployee(row);
       setKeyword('');
       setStores(await loadStores(row.employee_code));
