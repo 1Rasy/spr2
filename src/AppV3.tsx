@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { countStoreOrders, createManualStore, deleteExistingOrder, deleteManualStore, loadEmployees, loadHistory, loadItems, loadOrderDetail, loadOrdersByEmployee, loadProducts, loadStocks, loadStores, submitOrder } from './lib/api';
 import { buildDeliveryNoteRows, downloadDeliveryNoteImage } from './lib/deliveryNote';
 import { calculateOrderTotal, canMixBox, defaultOrderLine, packSize, productBarcode, unitOf, wholeDefaultPrice } from './lib/orderPayload';
-import { localDate, money, normalAmount, normalSaleItems, orderDetailFlavor, orderDetailSpec, orderHasAfterSale, productDisplayName, uniqueSkuCount } from './lib/rules';
+import { localDate, money, normalAmount, normalSaleItems, orderDetailFlavor, orderDetailSpec, orderHasAfterSale, parseAfterSaleRemark, productDisplayName, uniqueSkuCount } from './lib/rules';
 import type { Employee, HistorySummary, OrderLineDraft, Product, ReportRow, SalesOrderItem, Screen, StoreAsset, VanStock } from './types';
 
 const LOADING_TEXT = '正在加载..';
 const ORDER_DRAFT_PREFIX = 'spr2_order_draft_v1';
 
-type DetailState = { orderNo: string; orderDate: string; items: SalesOrderItem[]; hasAfterSale: boolean };
+type DetailState = { orderNo: string; orderDate: string; items: SalesOrderItem[]; hasAfterSale: boolean; afterSaleMap: Record<string, number> };
 type DetailGroup = { title: string; flavors: Map<string, number> };
+type DetailAfterSaleRow = { barcode: string; title: string; flavor: string; qty: number; unit: string };
 type StoredDraft = { date: string; lines: Record<string, OrderLineDraft>; selectedBrand?: string; selectedSpec?: string; mixBoxOpenKeys?: string[] };
 type StoreGroup = { letter: string; stores: StoreAsset[] };
 type ReportPreset = 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom';
@@ -112,8 +113,9 @@ export default function AppV3() {
   async function openDetail(orderNo: string, fromReport = false) {
     await run(async () => {
       const data = await loadOrderDetail(orderNo);
+      const afterSaleMap = parseAfterSaleRemark(data.order?.remark);
       setDetailFromReport(fromReport);
-      setDetail({ orderNo, orderDate: data.order?.created_at ? data.order.created_at.split('T')[0] : localDate(), items: data.items, hasAfterSale: orderHasAfterSale(data.order || {}, data.items) });
+      setDetail({ orderNo, orderDate: data.order?.created_at ? data.order.created_at.split('T')[0] : localDate(), items: data.items, hasAfterSale: orderHasAfterSale(data.order || {}, data.items), afterSaleMap });
       setScreen('detail');
     });
   }
@@ -255,7 +257,7 @@ export default function AppV3() {
     if (!store) return;
     await run(async () => {
       const data = await loadOrderDetail(orderNo);
-      const lines = orderItemsToDraftLines(data.items, products);
+      const lines = orderItemsToDraftLines(data.items, products, parseAfterSaleRemark(data.order?.remark));
       const previous = orderItemsStockMap(data.items);
       const brands = orderedUnique(products, 'brand');
       const firstEdited = products.find(product => lines[productBarcode(product)]);
@@ -350,13 +352,16 @@ function NewStoreScreen({ stores, triggerCreateNewStore, openHistory, deleteNewS
 }
 function HistoryScreen({ store, history, openOrder, openDetail, generateDeliveryNote, deliveryBusy, loading }: { store: StoreAsset; history: HistorySummary[]; openOrder: () => void; openDetail: (orderNo: string) => void; generateDeliveryNote: (orderNo: string, orderDate: string, storeName?: string) => void; deliveryBusy: boolean; loading: boolean }) {
   const isTemp = String(store.atom_code).startsWith('NEW_');
-  return <><div className="big-store-title">{store.store_name} {isTemp && <span className="new-store-badge">新门店</span>}</div><div style={{ margin: '14px 0' }}><button className="btn-new-order" onClick={openOrder}>＋ 新增单据</button></div>{history.map(row => { const date = row.created_at?.split('T')[0] || '未知日期'; return <button className="history-item history-item-compact" key={row.order_no} onClick={() => openDetail(row.order_no)}><div className="history-item-top"><span>实收：{money(row.saleSum || 0)}</span><span>{date}</span></div><div className="history-item-actions"><div className="history-item-meta">品项数: {row.skuCount || 0} 款 {row.hasAfterSale && <b className="badge">有售后</b>}</div><button className="delivery-note-btn delivery-note-btn-primary" type="button" disabled={deliveryBusy} onClick={event => { event.stopPropagation(); void generateDeliveryNote(row.order_no, date, store.store_name); }}>{deliveryBusy ? LOADING_TEXT : '生成单据'}</button></div></button>; })}{!history.length && !loading && <div className="sub empty">暂无订单</div>}</>;
+  return <><div className="big-store-title">{store.store_name} {isTemp && <span className="new-store-badge">新门店</span>}</div><div style={{ margin: '14px 0' }}><button className="btn-new-order" onClick={openOrder}>＋ 新增单据</button></div>{history.map(row => { const date = row.created_at?.split('T')[0] || '未知日期'; return <div className="history-item history-item-compact" role="button" tabIndex={0} key={row.order_no} onClick={() => openDetail(row.order_no)} onKeyDown={event => { if (event.key === 'Enter') openDetail(row.order_no); }}><div className="history-item-top"><span>实收：{money(row.saleSum || 0)}</span><span>{date}</span></div><div className="history-item-actions"><div className="history-item-meta">品项数: {row.skuCount || 0} 款 {row.hasAfterSale && <b className="badge">有售后</b>}</div><button className="delivery-note-btn delivery-note-btn-primary" type="button" disabled={deliveryBusy} onClick={event => { event.stopPropagation(); void generateDeliveryNote(row.order_no, date, store.store_name); }}>{deliveryBusy ? LOADING_TEXT : '生成单据'}</button></div></div>; })}{!history.length && !loading && <div className="sub empty">暂无订单</div>}</>;
 }
 
 function DetailScreen({ detail, products, storeName, generateDeliveryNote, deliveryBusy, editExistingOrder, deleteOrder }: { detail: DetailState; products: Product[]; storeName: string; generateDeliveryNote: (orderNo: string, orderDate: string, storeName?: string) => void; deliveryBusy: boolean; editExistingOrder: (orderNo: string) => void; deleteOrder: (orderNo: string) => void }) {
   const total = normalAmount(detail.items);
   const grouped = groupOrderDetail(detail.items, products);
-  return <><div className="big-store-title">订单详情</div><div className="detail-action-row"><div className="detail-summary-actions"><div className="amount-summary-banner detail-amount-banner"><span><strong>实收：{money(total)}</strong></span>{detail.hasAfterSale && <b className="badge">有售后</b>}</div><button className="delivery-note-btn delivery-note-btn-primary detail-delivery-action" type="button" disabled={deliveryBusy} onClick={() => generateDeliveryNote(detail.orderNo, detail.orderDate, storeName)}>{deliveryBusy ? LOADING_TEXT : '生成单据'}</button></div><div className="detail-secondary-actions"><button className="smallbtn detail-action-secondary" onClick={() => editExistingOrder(detail.orderNo)}>✏️ 修改</button><button className="smallbtn detail-danger-action" onClick={() => deleteOrder(detail.orderNo)}>🗑️ 删除</button></div></div><div className="order-detail-list">{grouped.map(row => <div className="order-detail-row" key={row.title}><div className="order-detail-title">{row.title}</div><div className="order-detail-lines"><div className="order-detail-flavors">{Array.from(row.flavors.entries()).map(([flavor, qty]) => <div className="order-detail-flavor" key={flavor}><span>{flavor}</span><span>×{qty}</span></div>)}</div></div></div>)}</div></>;
+  const afterSaleRows = buildAfterSaleDetailRows(detail.afterSaleMap, products);
+  const groupedTitles = new Set(grouped.map(row => row.title));
+  const afterOnlyRows = afterSaleRows.filter(row => !groupedTitles.has(row.title));
+  return <><div className="big-store-title">订单详情</div><div className="detail-action-row"><div className="detail-summary-actions"><div className="amount-summary-banner detail-amount-banner"><span><strong>实收：{money(total)}</strong></span>{detail.hasAfterSale && <b className="badge">有售后</b>}</div><button className="delivery-note-btn delivery-note-btn-primary detail-delivery-action" type="button" disabled={deliveryBusy} onClick={() => generateDeliveryNote(detail.orderNo, detail.orderDate, storeName)}>{deliveryBusy ? LOADING_TEXT : '生成单据'}</button></div><div className="detail-secondary-actions"><button className="smallbtn detail-action-secondary" onClick={() => editExistingOrder(detail.orderNo)}>✏️ 修改</button><button className="smallbtn detail-danger-action" onClick={() => deleteOrder(detail.orderNo)}>🗑️ 删除</button></div></div><div className="order-detail-list">{grouped.map(row => <div className="order-detail-row" key={row.title}><div className="order-detail-title">{row.title}</div><div className="order-detail-lines"><div className="order-detail-flavors">{Array.from(row.flavors.entries()).map(([flavor, qty]) => <div className="order-detail-flavor" key={flavor}><span>{flavor}</span><span>×{qty}</span></div>)}</div>{afterSaleRows.filter(afterRow => afterRow.title === row.title).map(afterRow => <div className="order-detail-line order-detail-line-danger" key={`after-${afterRow.barcode}`}>售后：<strong>{afterRow.qty}{afterRow.unit}</strong></div>)}</div></div>)}{afterOnlyRows.map(row => <div className="order-detail-row order-detail-row-danger" key={`after-only-${row.barcode}`}><div className="order-detail-title order-detail-title-danger">{row.title}</div><div className="order-detail-lines"><div className="order-detail-line order-detail-line-danger">售后：<strong>{row.qty}{row.unit}</strong></div></div></div>)}</div></>;
 }
 
 function ReportScreen({ preset, customDate, openReport, rows, openDetail }: { preset: ReportPreset; customDate: string; openReport: (preset: ReportPreset, customDate?: string) => void; rows: ReportRow[]; openDetail: (row: ReportRow) => void }) {
@@ -486,7 +491,7 @@ function orderItemsStockMap(items: SalesOrderItem[]) {
   return map;
 }
 
-function orderItemsToDraftLines(items: SalesOrderItem[], products: Product[]) {
+function orderItemsToDraftLines(items: SalesOrderItem[], products: Product[], afterSaleMap: Record<string, number> = {}) {
   const lines: Record<string, OrderLineDraft> = {};
   normalSaleItems(items).forEach(item => {
     const barcode = String(item.barcode || '');
@@ -514,9 +519,20 @@ function orderItemsToDraftLines(items: SalesOrderItem[], products: Product[]) {
     }
     lines[barcode] = line;
   });
+  Object.entries(afterSaleMap).forEach(([barcode, qty]) => {
+    const returnQty = Number(qty || 0);
+    if (returnQty <= 0) return;
+    const product = findProductByBarcode(products, barcode);
+    if (!product) return;
+    const line = lines[barcode] || defaultOrderLine(product);
+    line.afterSaleQty = returnQty;
+    lines[barcode] = line;
+  });
   return lines;
 }
-function groupOrderDetail(items: SalesOrderItem[], products: Product[]) { const grouped = new Map<string, DetailGroup>(); normalSaleItems(items).forEach(item => { const product = products.find(p => String(p.barcode) === String(item.barcode) || String(p.id) === String(item.barcode)); const title = orderDetailSpec(product, item.product_name || item.barcode); const flavor = orderDetailFlavor(product) || item.product_name || '默认'; const row = grouped.get(title) || { title, flavors: new Map<string, number>() }; const qty = Number(item.sale_qty ?? item.qty ?? 0); row.flavors.set(flavor, Number(row.flavors.get(flavor) || 0) + qty); grouped.set(title, row); }); return Array.from(grouped.values()); }
+function groupOrderDetail(items: SalesOrderItem[], products: Product[]) { const grouped = new Map<string, DetailGroup>(); normalSaleItems(items).forEach(item => { const product = findProductByBarcode(products, String(item.barcode || '')); const title = orderDetailSpec(product, item.product_name || item.barcode); const flavor = orderDetailFlavor(product) || item.product_name || '默认'; const row = grouped.get(title) || { title, flavors: new Map<string, number>() }; const qty = Number(item.sale_qty ?? item.qty ?? 0); row.flavors.set(flavor, Number(row.flavors.get(flavor) || 0) + qty); grouped.set(title, row); }); return Array.from(grouped.values()); }
+function buildAfterSaleDetailRows(afterSaleMap: Record<string, number>, products: Product[]) { return Object.entries(afterSaleMap).map(([barcode, qty]) => { const product = findProductByBarcode(products, barcode); return { barcode, title: orderDetailSpec(product, product?.product_name || barcode), flavor: orderDetailFlavor(product) || product?.product_name || barcode, qty: Number(qty || 0), unit: product ? unitOf(product) : '个' }; }).filter(row => row.qty > 0) as DetailAfterSaleRow[]; }
+function findProductByBarcode(products: Product[], barcode: string) { return products.find(product => productBarcode(product) === barcode || String(product.id) === barcode || String(product.barcode || '') === barcode); }
 function hasLineValue(line: OrderLineDraft) { return Number(line.wholeQty || 0) > 0 || Number(line.looseQty || 0) > 0 || Number(line.mixQty || 0) > 0 || Number(line.afterSaleQty || 0) > 0; }
 function hasAnySale(products: Product[], lines: Record<string, OrderLineDraft>) { return products.some(product => stockQtyFromLine(product, lines[productBarcode(product)]) > 0 || Number(lines[productBarcode(product)]?.afterSaleQty || 0) > 0); }
 function stockQtyFromLine(product: Product, line?: OrderLineDraft) { return line ? Number(line.wholeQty || 0) * packSize(product) + Number(line.looseQty || 0) + Number(line.mixQty || 0) : 0; }

@@ -58,6 +58,7 @@ assert.match(css, /\.qty-popup-number\.active/, 'quantity popup CSS should inclu
 assert.match(indexHtml, /html2canvas@1\.4\.1/, 'delivery note should load the old html2canvas renderer');
 assert.match(app, /async function generateDeliveryNote/, 'delivery note buttons should call a real generator');
 assert.match(app, /generateDeliveryNote\(row\.order_no, date, store\.store_name\)/, 'history delivery note button should pass order number, date, and store name');
+assert.match(app, /<div className="history-item history-item-compact" role="button"/, 'history rows should not nest the delivery button inside another button');
 assert.match(app, /generateDeliveryNote\(detail\.orderNo, detail\.orderDate, storeName\)/, 'detail delivery note button should pass current order context');
 assert.match(app, /deliveryBusyOrderNo/, 'delivery note generation should disable buttons while rendering');
 assert.match(deliveryNote, /function safeDeliveryFileName/, 'delivery note should keep old safe filename behavior');
@@ -75,6 +76,11 @@ assert.match(app, /deleteExistingOrder/, 'detail delete should call the API dele
 assert.match(app, /确定删除本笔记录并返还库存量吗/, 'delete flow should keep the old SPR confirmation wording');
 assert.match(app, /onClick=\{\(\) => editExistingOrder\(detail\.orderNo\)\}/, 'detail edit button should be wired to editExistingOrder');
 assert.match(app, /onClick=\{\(\) => deleteOrder\(detail\.orderNo\)\}/, 'detail delete button should be wired to deleteOrder');
+assert.match(app, /parseAfterSaleRemark/, 'detail should parse after-sales remark metadata');
+assert.match(app, /afterSaleMap/, 'detail state should carry after-sales quantities');
+assert.match(app, /order-detail-line-danger/, 'detail should render old after-sales danger line');
+assert.match(app, /order-detail-row-danger/, 'after-sales-only detail rows should use old danger row');
+assert.match(app, /orderItemsToDraftLines\(data\.items, products, parseAfterSaleRemark/, 'edit should restore after-sales quantities from order remark');
 assert.match(app, /type ReportPreset = 'today' \| 'yesterday' \| 'week' \| 'month' \| 'all' \| 'custom'/, 'report should support the old preset set');
 assert.match(app, /reportPreset/, 'report should track the active preset like old SPR');
 assert.match(app, /function getReportRange/, 'report should derive old SPR date ranges');
