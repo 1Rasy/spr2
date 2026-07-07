@@ -86,3 +86,9 @@ assert.match(app, /function formatQtyToUnits/, 'stock page should use old SPR st
 assert.match(app, /件 \$\{boxes\}中盒/, 'three-level stock display should include 件 and 中盒 units');
 assert.match(app, /formatQtyToUnits\(total, product\.pcs_per_case, product\.pcs_per_box, unitOf\(product\)\)/, 'stock page should render stock with the stock-specific formatter');
 assert.doesNotMatch(app, /stock-qty[\s\S]*formatStockQty\(total, product\)/, 'stock page should not use the sales whole-loose formatter');
+assert.match(app, /detailFromReport/, 'detail screen should remember when it was opened from report');
+assert.match(app, /openReportDetail\(row: ReportRow\)/, 'report rows should open detail with report context');
+assert.match(app, /setStore\(\{ employee_code: employee\?\.employee_code \|\| '', atom_code: row\.atomCode, store_name: row\.storeName \}\)/, 'report detail should set current store context from the report row');
+assert.match(app, /openDetail\(row\.order_no, true\)/, 'report detail should pass the from-report flag');
+assert.match(app, /detailFromReport \? void openReport\(reportPreset, reportDate\) : setScreen\('history'\)/, 'back from report detail should return to report');
+assert.match(app, /if \(detailFromReport\) await openReport\(reportPreset, reportDate\)/, 'deleting from report detail should return to report');

@@ -25,6 +25,7 @@ export default function AppV3() {
   const [store, setStore] = useState<StoreAsset | null>(null);
   const [history, setHistory] = useState<HistorySummary[]>([]);
   const [detail, setDetail] = useState<DetailState | null>(null);
+  const [detailFromReport, setDetailFromReport] = useState(false);
   const [stocks, setStocks] = useState<VanStock[]>([]);
   const [reportDate, setReportDate] = useState(localDate());
   const [reportPreset, setReportPreset] = useState<ReportPreset>('today');
@@ -108,12 +109,18 @@ export default function AppV3() {
     });
   }
 
-  async function openDetail(orderNo: string) {
+  async function openDetail(orderNo: string, fromReport = false) {
     await run(async () => {
       const data = await loadOrderDetail(orderNo);
+      setDetailFromReport(fromReport);
       setDetail({ orderNo, orderDate: data.order?.created_at ? data.order.created_at.split('T')[0] : localDate(), items: data.items, hasAfterSale: orderHasAfterSale(data.order || {}, data.items) });
       setScreen('detail');
     });
+  }
+
+  async function openReportDetail(row: ReportRow) {
+    setStore({ employee_code: employee?.employee_code || '', atom_code: row.atomCode, store_name: row.storeName });
+    await openDetail(row.order_no, true);
   }
 
   async function openReport(preset: ReportPreset = reportPreset, customDate = reportDate) {
@@ -163,7 +170,7 @@ export default function AppV3() {
     if (screen === 'stores' && keyword.trim()) { setKeyword(''); return; }
     if (screen === 'stores') { setEmployee(null); setStores([]); setScreen('employees'); return; }
     if (screen === 'history') { setStore(null); setScreen('stores'); return; }
-    if (screen === 'detail') { setScreen('history'); return; }
+    if (screen === 'detail') { detailFromReport ? void openReport(reportPreset, reportDate) : setScreen('history'); return; }
     if (screen === 'report' || screen === 'stock' || screen === 'newStore') { setScreen('stores'); return; }
     if (screen === 'order') {
       if (employee && store) clearDraft(draftKey(employee, store));
@@ -270,7 +277,8 @@ export default function AppV3() {
     await run(async () => {
       await deleteExistingOrder(employee.employee_code, orderNo, detail.items);
       setDetail(null);
-      await openHistory(store);
+      if (detailFromReport) await openReport(reportPreset, reportDate);
+      else await openHistory(store);
     });
   }
   async function generateDeliveryNote(orderNo: string, orderDate: string, storeName = store?.store_name || '') {
@@ -313,7 +321,7 @@ export default function AppV3() {
         {screen === 'history' && store && <HistoryScreen store={store} history={history} openOrder={openOrder} openDetail={openDetail} generateDeliveryNote={generateDeliveryNote} deliveryBusy={deliveryBusyOrderNo !== null} loading={loading} />}
         {screen === 'newStore' && <NewStoreScreen stores={stores.filter(row => String(row.atom_code).startsWith('NEW_'))} triggerCreateNewStore={triggerCreateNewStore} openHistory={openHistory} deleteNewStore={deleteNewStore} />}
         {screen === 'detail' && detail && <DetailScreen detail={detail} products={products} storeName={store?.store_name || ''} generateDeliveryNote={generateDeliveryNote} deliveryBusy={deliveryBusyOrderNo !== null} editExistingOrder={editExistingOrder} deleteOrder={deleteOrder} />}
-        {screen === 'report' && <ReportScreen preset={reportPreset} customDate={reportDate} openReport={openReport} rows={reportRows} openDetail={openDetail} />}
+        {screen === 'report' && <ReportScreen preset={reportPreset} customDate={reportDate} openReport={openReport} rows={reportRows} openDetail={openReportDetail} />}
         {screen === 'stock' && employee && <StockScreen employee={employee} allProducts={products} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} selectedSpec={selectedSpec} setSelectedSpec={setSelectedSpec} stockMap={stockMap} />}
         {screen === 'order' && store && <OrderScreen store={store} date={draftDate} setDate={setDraftDate} allProducts={products} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} selectedSpec={selectedSpec} setSelectedSpec={setSelectedSpec} lines={draftLines} mixBoxOpenKeys={mixBoxOpenKeys} setMixBoxOpenKeys={setMixBoxOpenKeys} updateDraft={updateDraft} updateSpecPrice={updateSpecPrice} openQtyPopup={setQtyPopup} saveOrder={saveOrder} />}
       </div>
@@ -351,10 +359,10 @@ function DetailScreen({ detail, products, storeName, generateDeliveryNote, deliv
   return <><div className="big-store-title">订单详情</div><div className="detail-action-row"><div className="detail-summary-actions"><div className="amount-summary-banner detail-amount-banner"><span><strong>实收：{money(total)}</strong></span>{detail.hasAfterSale && <b className="badge">有售后</b>}</div><button className="delivery-note-btn delivery-note-btn-primary detail-delivery-action" type="button" disabled={deliveryBusy} onClick={() => generateDeliveryNote(detail.orderNo, detail.orderDate, storeName)}>{deliveryBusy ? LOADING_TEXT : '生成单据'}</button></div><div className="detail-secondary-actions"><button className="smallbtn detail-action-secondary" onClick={() => editExistingOrder(detail.orderNo)}>✏️ 修改</button><button className="smallbtn detail-danger-action" onClick={() => deleteOrder(detail.orderNo)}>🗑️ 删除</button></div></div><div className="order-detail-list">{grouped.map(row => <div className="order-detail-row" key={row.title}><div className="order-detail-title">{row.title}</div><div className="order-detail-lines"><div className="order-detail-flavors">{Array.from(row.flavors.entries()).map(([flavor, qty]) => <div className="order-detail-flavor" key={flavor}><span>{flavor}</span><span>×{qty}</span></div>)}</div></div></div>)}</div></>;
 }
 
-function ReportScreen({ preset, customDate, openReport, rows, openDetail }: { preset: ReportPreset; customDate: string; openReport: (preset: ReportPreset, customDate?: string) => void; rows: ReportRow[]; openDetail: (orderNo: string) => void }) {
+function ReportScreen({ preset, customDate, openReport, rows, openDetail }: { preset: ReportPreset; customDate: string; openReport: (preset: ReportPreset, customDate?: string) => void; rows: ReportRow[]; openDetail: (row: ReportRow) => void }) {
   const total = rows.reduce((sum, row) => sum + row.saleSum, 0);
   const buttons: Array<[ReportPreset, string]> = [['today', '今天'], ['yesterday', '昨天'], ['week', '本周'], ['month', '本月'], ['all', '全部']];
-  return <><div className="big-store-title">📈 卖进数据</div><div id="reportFilters" className="report-filter-row">{buttons.map(([value, label]) => <button key={value} className={`smallbtn ${preset === value ? 'active' : ''}`} onClick={() => openReport(value)}>{label}</button>)}<div className="date-picker-wrapper"><button className={`smallbtn ${preset === 'custom' ? 'active' : ''}`} onClick={() => document.getElementById('reportDateInput') instanceof HTMLInputElement && (document.getElementById('reportDateInput') as HTMLInputElement).showPicker?.()}>日期选择</button><input id="reportDateInput" className="real-date-input report-date-input" type="date" value={customDate} onChange={event => event.target.value && openReport('custom', event.target.value)} /></div></div><div id="reportSummary" className="amount-summary-banner"><span><strong>总实收：{money(total)}</strong></span></div><div id="reportRows">{rows.length === 0 ? <div className="sub empty">⚠️ 暂无报表记录</div> : rows.map(row => <button className="history-item report-history-item" key={row.order_no} onClick={() => openDetail(row.order_no)}><div className="history-item-top"><strong>{row.storeName}</strong><span>{row.orderDate}</span></div><div className="history-item-actions"><div className="history-item-meta">品项: <strong>{row.skuCount}</strong> 种 {row.hasAfterSale && <b className="badge">有售后</b>}</div><div className="history-detail-hint">实收：{money(row.saleSum)}</div></div></button>)}</div></>;
+  return <><div className="big-store-title">📈 卖进数据</div><div id="reportFilters" className="report-filter-row">{buttons.map(([value, label]) => <button key={value} className={`smallbtn ${preset === value ? 'active' : ''}`} onClick={() => openReport(value)}>{label}</button>)}<div className="date-picker-wrapper"><button className={`smallbtn ${preset === 'custom' ? 'active' : ''}`} onClick={() => document.getElementById('reportDateInput') instanceof HTMLInputElement && (document.getElementById('reportDateInput') as HTMLInputElement).showPicker?.()}>日期选择</button><input id="reportDateInput" className="real-date-input report-date-input" type="date" value={customDate} onChange={event => event.target.value && openReport('custom', event.target.value)} /></div></div><div id="reportSummary" className="amount-summary-banner"><span><strong>总实收：{money(total)}</strong></span></div><div id="reportRows">{rows.length === 0 ? <div className="sub empty">⚠️ 暂无报表记录</div> : rows.map(row => <button className="history-item report-history-item" key={row.order_no} onClick={() => openDetail(row)}><div className="history-item-top"><strong>{row.storeName}</strong><span>{row.orderDate}</span></div><div className="history-item-actions"><div className="history-item-meta">品项: <strong>{row.skuCount}</strong> 种 {row.hasAfterSale && <b className="badge">有售后</b>}</div><div className="history-detail-hint">实收：{money(row.saleSum)}</div></div></button>)}</div></>;
 }
 
 function StockScreen({ employee, allProducts, selectedBrand, setSelectedBrand, selectedSpec, setSelectedSpec, stockMap }: { employee: Employee; allProducts: Product[]; selectedBrand: string; setSelectedBrand: (v: string) => void; selectedSpec: string; setSelectedSpec: (v: string) => void; stockMap: Map<string, number> }) {
