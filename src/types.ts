@@ -61,6 +61,7 @@ export interface VanStock {
   product_barcode: string;
   qty?: number;
   stock_qty?: number;
+  updated_at?: string;
 }
 
 export interface OrderLineDraft {

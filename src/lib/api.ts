@@ -157,6 +157,24 @@ export async function loadOrderDetail(orderNo: string) {
   return { order: order as SalesOrder | null, items: (items || []) as SalesOrderItem[] };
 }
 
+
+export async function loadStockSummaryData() {
+  const [stockRes, empRows, productRows] = await Promise.all([
+    supabase.from('van_stocks').select('employee_code, product_barcode, qty, updated_at').order('employee_code', { ascending: true }).limit(20000),
+    fetchAll<Employee>('employees', 'employee_code, name, is_active'),
+    fetchAll<Product>('products', 'id, sort_order, barcode, name, product_name, brand, spec, flavor, pcs_per_case, pcs_per_box, unit, is_active'),
+  ]);
+  if (stockRes.error) throw stockRes.error;
+  return { stocks: (stockRes.data || []) as VanStock[], employees: empRows, products: productRows };
+}
+
+export async function upsertStockRows(rows: Array<{ employee_code: string; product_barcode: string; qty: number; updated_at?: string }>) {
+  for (let start = 0; start < rows.length; start += 500) {
+    const part = rows.slice(start, start + 500);
+    const { error } = await supabase.from('van_stocks').upsert(part, { onConflict: 'employee_code,product_barcode' });
+    if (error) throw error;
+  }
+}
 export async function loadStocks(employeeCode: string) {
   const { data, error } = await supabase.from('van_stocks').select('*').eq('employee_code', employeeCode);
   if (error) throw error;
